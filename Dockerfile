@@ -1,5 +1,5 @@
 # 1. Build Stage
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26.2-alpine3.23 AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -9,7 +9,7 @@ COPY . .
 RUN go build -o api cmd/api/main.go
 
 # 2. Final Stage
-FROM python:3.11-alpine
+FROM python:3.14.4-alpine3.23
 
 # Install FFmpeg, curl, and build dependencies for python libs
 RUN apk add --no-cache ffmpeg curl build-base libffi-dev

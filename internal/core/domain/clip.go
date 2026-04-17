@@ -16,3 +16,16 @@ type ClipSegment struct {
 	Reasoning string `json:"reasoning"`
 	Words     []Word `json:"words,omitempty"` // Captured words for captions
 }
+
+// Clip represents a persisted clip record exposed to the dashboard.
+type Clip struct {
+	ID         string `json:"id"`
+	SourceID   string `json:"source_id"`
+	StartTime  string `json:"start_time"`
+	EndTime    string `json:"end_time"`
+	Headline   string `json:"headline"`
+	S3Path     string `json:"s3_path"`
+	Status     string `json:"status"`
+	ViralScore int    `json:"viral_score"`
+	Reasoning  string `json:"reasoning"`
+}

@@ -27,7 +27,7 @@ func main() {
 		transcriber = adapters.NewMockTranscriber()
 		agent = adapters.NewMockStrategist()
 	} else {
-		transcriber = adapters.NewWhisperTranscriber("http://localhost:8000/v1/audio/transcriptions")
+		transcriber = adapters.NewWhisperTranscriber(whisperURL())
 		agent = adapters.NewGeminiAgent(apiKey)
 	}
 
@@ -36,13 +36,13 @@ func main() {
 	editor := adapters.NewFFmpegEditor()
 
 	// Storage (MinIO)
-	storage, err := adapters.NewMinIOStorage("localhost:9002", "admin", "secretpassword", "clips")
+	storage, err := adapters.NewMinIOStorage(minioEndpoint(), minioAccessKey(), minioSecretKey(), minioBucket())
 	if err != nil {
 		log.Printf("MinIO Warning: %v (Continuing...)\n", err)
 	}
 
 	// Repository (Postgres)
-	repo, err := adapters.NewPostgresRepository("postgres://factory:secretpassword@localhost:5432/clips_db?sslmode=disable")
+	repo, err := adapters.NewPostgresRepository(postgresDSN())
 	if err != nil {
 		log.Printf("Postgres Warning: %v (Continuing...)\n", err)
 	}
@@ -97,8 +97,58 @@ func main() {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	})
 
-	log.Println("Listening on :8080 for dashboard...")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	port := os.Getenv("CLIPPER_PORT")
+	if port == "" {
+		port = ":8081"
+	}
+	if port[0] != ':' {
+		port = ":" + port
+	}
+
+	log.Printf("Listening on %s for clipper dashboard...", port)
+	if err := http.ListenAndServe(port, nil); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+func postgresDSN() string {
+	if dsn := os.Getenv("POSTGRES_DSN"); dsn != "" {
+		return dsn
+	}
+	return "postgres://factory:secretpassword@localhost:5432/clips_db?sslmode=disable"
+}
+
+func minioEndpoint() string {
+	if endpoint := os.Getenv("MINIO_ENDPOINT"); endpoint != "" {
+		return endpoint
+	}
+	return "localhost:9002"
+}
+
+func minioAccessKey() string {
+	if accessKey := os.Getenv("MINIO_ACCESS_KEY"); accessKey != "" {
+		return accessKey
+	}
+	return "admin"
+}
+
+func minioSecretKey() string {
+	if secretKey := os.Getenv("MINIO_SECRET_KEY"); secretKey != "" {
+		return secretKey
+	}
+	return "secretpassword"
+}
+
+func minioBucket() string {
+	if bucket := os.Getenv("MINIO_BUCKET"); bucket != "" {
+		return bucket
+	}
+	return "clips"
+}
+
+func whisperURL() string {
+	if url := os.Getenv("WHISPER_URL"); url != "" {
+		return url
+	}
+	return "http://localhost:8000/v1/audio/transcriptions"
 }

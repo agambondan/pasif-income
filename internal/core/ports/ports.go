@@ -11,9 +11,13 @@ type Storage interface {
 }
 
 type Repository interface {
-	SaveClip(ctx context.Context, clip *domain.ClipSegment, videoURL string) error
+	SaveClip(ctx context.Context, clip *domain.ClipSegment, sourceID string, s3Path string) error
 	UpdateStatus(ctx context.Context, clipID string, status string) error
-	ListClips(ctx context.Context) ([]domain.ClipSegment, error)
+	ListClips(ctx context.Context) ([]domain.Clip, error)
+	CreateJob(ctx context.Context, job *domain.GenerationJob) error
+	UpdateJobStatus(ctx context.Context, jobID string, status string, errMsg string) error
+	GetJob(ctx context.Context, jobID string) (*domain.GenerationJob, error)
+	ListJobs(ctx context.Context) ([]domain.GenerationJob, error)
 }
 
 // Creation Pipeline Ports (Faceless)

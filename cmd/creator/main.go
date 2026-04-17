@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agambondan/pasif-income/internal/adapters"
+	"github.com/agambondan/pasif-income/internal/core/ports"
 	"github.com/agambondan/pasif-income/internal/services"
 )
 
@@ -25,7 +26,7 @@ func main() {
 	voice := adapters.NewVoiceAdapter("en-US-Standard-A")
 	image := adapters.NewStableDiffusionAdapter(os.Getenv("SD_API_URL"))
 	assembler := adapters.NewFFmpegAssembler()
-	uploader := adapters.NewMockUploader("YouTube Shorts")
+	uploader := newUploaderFromEnv()
 
 	// 2. Initialize Service
 	service := services.NewGeneratorService(writer, voice, image, assembler, uploader)
@@ -50,4 +51,35 @@ func main() {
 	}
 
 	log.Println("Generation completed successfully!")
+}
+
+func newUploaderFromEnv() ports.Uploader {
+	if os.Getenv("USE_MOCK") == "true" {
+		return adapters.NewMockUploader("YouTube Shorts")
+	}
+
+	endpoint := os.Getenv("MINIO_ENDPOINT")
+	if endpoint == "" {
+		endpoint = "localhost:9002"
+	}
+	accessKey := os.Getenv("MINIO_ACCESS_KEY")
+	if accessKey == "" {
+		accessKey = "admin"
+	}
+	secretKey := os.Getenv("MINIO_SECRET_KEY")
+	if secretKey == "" {
+		secretKey = "secretpassword"
+	}
+	bucket := os.Getenv("MINIO_BUCKET")
+	if bucket == "" {
+		bucket = "clips"
+	}
+
+	uploader, err := adapters.NewMinIOUploader(endpoint, accessKey, secretKey, bucket, "YouTube Shorts")
+	if err != nil {
+		log.Printf("MinIO uploader warning: %v (falling back to mock)\n", err)
+		return adapters.NewMockUploader("YouTube Shorts")
+	}
+
+	return uploader
 }

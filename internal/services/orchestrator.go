@@ -83,7 +83,7 @@ func (s *WorkflowService) RunPipeline(ctx context.Context, videoURL string) erro
 		}
 
 		// 6. Save Metadata to DB (Postgres)
-		err = s.repo.SaveClip(ctx, &seg, videoURL)
+		err = s.repo.SaveClip(ctx, &seg, videoURL, remoteURL)
 		if err != nil {
 			log.Printf("Warning: Database save failed: %v", err)
 		}

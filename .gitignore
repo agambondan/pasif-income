@@ -1,4 +1,4 @@
-# Binary files
+go# Binary files
 bin/
 *.exe
 *.o
@@ -31,6 +31,13 @@ faceless_*.mp4
 clip_*.mp4
 downloaded_video.mp4
 extracted_audio.mp3
+
+# FFmpeg Binaries & Archives
+ffmpeg-7.0.2-amd64-static/
+ffmpeg.tar.xz
+ffmpeg
+ffprobe
+qt-faststart
 
 # Local storage (MinIO, DB)
 /data/
