@@ -1,0 +1,50 @@
+# Binary files
+bin/
+*.exe
+*.o
+*.a
+*.so
+*.dll
+
+# Go
+go.sum
+vendor/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+env/
+venv/
+.env
+
+# Media outputs (Video & Audio)
+*.mp4
+*.mp3
+*.png
+*.jpg
+*.jpeg
+output_vo.mp3
+scene_*.png
+faceless_*.mp4
+clip_*.mp4
+downloaded_video.mp4
+extracted_audio.mp3
+
+# Local storage (MinIO, DB)
+/data/
+/pgdata/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Chronicle/Agents
+.chronicle/
+.firecrawl/
+.gemini/

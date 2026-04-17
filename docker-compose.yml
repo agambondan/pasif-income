@@ -1,0 +1,55 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: factory
+      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_DB: clips_db
+    ports:
+      - "5432:5432"
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: secretpassword
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+
+  whisper:
+    image: onerahmet/openai-whisper-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL=base
+    volumes:
+      - .cache/whisper:/root/.cache/whisper
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  app:
+    build: .
+    environment:
+      - VIDEO_URL=${VIDEO_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - USE_MOCK=${USE_MOCK}
+    volumes:
+      - .:/app
+      - ${HOME}/.gemini:/root/.gemini:ro # Mount OAuth credentials as Read-Only
+    depends_on:
+      - db
+      - minio
+    ports:
+      - "8080:8080"
+
+  # Optional: Faster-Whisper API (Local STT)
+  # whisper:
+  #   image: onerahmet/openai-whisper-api
+  #   ports:
+  #     - "8000:8000"
