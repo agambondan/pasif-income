@@ -40,29 +40,67 @@ services:
       - VIDEO_URL=${VIDEO_URL}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - USE_MOCK=${USE_MOCK}
-      - POSTGRES_DSN=${POSTGRES_DSN:-postgres://factory:secretpassword@host.docker.internal:5432/clips_db?sslmode=disable}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-host.docker.internal:9002}
+      - POSTGRES_DSN=${POSTGRES_DSN:-postgres://factory:secretpassword@db:5432/clips_db?sslmode=disable}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-admin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-secretpassword}
       - MINIO_BUCKET=${MINIO_BUCKET:-clips}
-      - WHISPER_URL=${WHISPER_URL:-http://host.docker.internal:18000/v1/audio/transcriptions}
+      - WHISPER_URL=${WHISPER_URL:-http://whisper:9000/v1/audio/transcriptions}
     volumes:
       - ${HOME}/.gemini:/root/.gemini:ro # Mount OAuth credentials as Read-Only
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       - db
       - minio
+      - whisper
     ports:
       - "18080:8080"
+
+  clipper:
+    build:
+      context: .
+      dockerfile: Dockerfile.clipper
+    environment:
+      - VIDEO_URL=${VIDEO_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - USE_MOCK=${USE_MOCK}
+      - POSTGRES_DSN=${POSTGRES_DSN:-postgres://factory:secretpassword@db:5432/clips_db?sslmode=disable}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-admin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-secretpassword}
+      - MINIO_BUCKET=${MINIO_BUCKET:-clips}
+      - WHISPER_URL=${WHISPER_URL:-http://whisper:9000/v1/audio/transcriptions}
+      - CLIPPER_PORT=${CLIPPER_PORT:-8081}
+    depends_on:
+      - db
+      - minio
+      - whisper
+    ports:
+      - "18082:8081"
+
+  creator:
+    build:
+      context: .
+      dockerfile: Dockerfile.creator
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_ACCESS_TOKEN=${GEMINI_ACCESS_TOKEN}
+      - USE_MOCK=${USE_MOCK}
+      - NICHE=${NICHE:-stoicism}
+      - TOPIC=${TOPIC:-how to control your mind}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-admin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-secretpassword}
+      - MINIO_BUCKET=${MINIO_BUCKET:-clips}
+    profiles:
+      - manual
 
   web:
     build:
       context: ./web
       args:
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:18080}
+        API_PROXY_TARGET: ${API_PROXY_TARGET:-http://app:8080}
     environment:
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:18080}
+      API_PROXY_TARGET: ${API_PROXY_TARGET:-http://app:8080}
     depends_on:
       - app
     ports:

@@ -1,0 +1,13 @@
+.git
+.idea
+.vscode
+bin
+dist
+build
+coverage
+node_modules
+web/node_modules
+web/.next
+web/out
+.cache
+**/*.log

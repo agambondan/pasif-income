@@ -24,3 +24,5 @@ The system follows an event-driven, staged workflow:
 
 ## 5. Distribution Stage
 - Approved clips are queued for upload to TikTok, YouTube Shorts, and Instagram Reels.
+- Current code still treats upload as a single target.
+- Multi-platform and multi-account distribution is planned in [Distribution Matrix](./distribution-matrix.md).

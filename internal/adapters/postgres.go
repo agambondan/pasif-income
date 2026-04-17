@@ -73,7 +73,7 @@ func (r *PostgresRepository) UpdateStatus(ctx context.Context, clipID string, st
 
 func (r *PostgresRepository) ListClips(ctx context.Context) ([]domain.Clip, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, COALESCE(source_id, ''), COALESCE(s3_path, ''), headline, start_time, end_time, COALESCE(status, 'pending'), viral_score, COALESCE(reasoning, '')
+		SELECT id, COALESCE(source_id, ''), COALESCE(s3_path, ''), COALESCE(headline, ''), COALESCE(start_time, ''), COALESCE(end_time, ''), COALESCE(status, 'pending'), COALESCE(viral_score, 0), COALESCE(reasoning, '')
 		FROM clips
 		ORDER BY created_at DESC
 	`)
@@ -82,7 +82,7 @@ func (r *PostgresRepository) ListClips(ctx context.Context) ([]domain.Clip, erro
 	}
 	defer rows.Close()
 
-	var clips []domain.Clip
+	clips := []domain.Clip{}
 	for rows.Next() {
 		var c domain.Clip
 		err := rows.Scan(&c.ID, &c.SourceID, &c.S3Path, &c.Headline, &c.StartTime, &c.EndTime, &c.Status, &c.ViralScore, &c.Reasoning)
@@ -151,7 +151,7 @@ func (r *PostgresRepository) ListJobs(ctx context.Context) ([]domain.GenerationJ
 	}
 	defer rows.Close()
 
-	var jobs []domain.GenerationJob
+	jobs := []domain.GenerationJob{}
 	for rows.Next() {
 		var job domain.GenerationJob
 		var errorText string

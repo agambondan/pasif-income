@@ -13,7 +13,7 @@ type GenerationJob = {
   updated_at: string;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
+const API_BASE_URL = '';
 
 const jobStatusStyles: Record<GenerationJob['status'], string> = {
   queued: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
@@ -35,6 +35,8 @@ export default function Dashboard() {
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [backendOnline, setBackendOnline] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState('Never');
   const [niche, setNiche] = useState('stoicism');
   const [topic, setTopic] = useState('how to control your mind');
@@ -42,8 +44,12 @@ export default function Dashboard() {
   const fetchClips = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/clips`);
+      if (!res.ok) {
+        console.error(`Failed to fetch clips: ${res.status}`);
+        return;
+      }
       const data = await res.json();
-      setClips(data);
+      setClips(data || []);
     } catch (err) {
       console.error('Failed to fetch clips:', err);
     }
@@ -52,24 +58,38 @@ export default function Dashboard() {
   const fetchJobs = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/jobs`);
+      if (!res.ok) {
+        console.error(`Failed to fetch jobs: ${res.status}`);
+        return;
+      }
       const data = await res.json();
-      setJobs(data);
+      setJobs(data || []);
     } catch (err) {
       console.error('Failed to fetch jobs:', err);
     }
   }, []);
 
+  const fetchBackendHealth = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/health`);
+      setBackendOnline(res.ok);
+    } catch (err) {
+      console.error('Failed to fetch backend health:', err);
+      setBackendOnline(false);
+    }
+  }, []);
+
   const refreshAll = useCallback(async () => {
     setLoading(true);
-    await Promise.all([fetchClips(), fetchJobs()]);
+    await Promise.all([fetchBackendHealth(), fetchClips(), fetchJobs()]);
     setLoading(false);
     setLastUpdated(new Date().toLocaleString());
-  }, [fetchClips, fetchJobs]);
+  }, [fetchBackendHealth, fetchClips, fetchJobs]);
 
   const pollState = useCallback(async () => {
-    await Promise.all([fetchClips(), fetchJobs()]);
+    await Promise.all([fetchBackendHealth(), fetchClips(), fetchJobs()]);
     setLastUpdated(new Date().toLocaleString());
-  }, [fetchClips, fetchJobs]);
+  }, [fetchBackendHealth, fetchClips, fetchJobs]);
 
   useEffect(() => {
     Promise.resolve().then(() => refreshAll());
@@ -96,14 +116,22 @@ export default function Dashboard() {
   const startGeneration = async () => {
     try {
       setIsGenerating(true);
-      await fetch(`${API_BASE_URL}/api/generate`, {
+      setStatusMessage(null);
+      const res = await fetch(`${API_BASE_URL}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ niche, topic }),
       });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      const job = await res.json();
+      setStatusMessage(`Job ${job.id} queued for ${job.niche}: ${job.topic}`);
       await Promise.all([fetchClips(), fetchJobs()]);
     } catch (err) {
       console.error('Failed to start generation:', err);
+      setStatusMessage(err instanceof Error ? err.message : 'Failed to start generation');
     } finally {
       setIsGenerating(false);
     }
@@ -125,8 +153,8 @@ export default function Dashboard() {
             >
                 Refresh Queue
             </button>
-            <div className="bg-emerald-500/10 px-4 py-2 rounded-lg border border-emerald-500/20">
-                <span className="text-emerald-400 text-sm font-bold">● Backend Online</span>
+            <div className={`px-4 py-2 rounded-lg border text-sm font-bold ${backendOnline ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-300'}`}>
+                <span>{backendOnline ? '● Backend Online' : '● Backend Offline'}</span>
             </div>
             <div className="bg-gray-800/60 px-4 py-2 rounded-lg border border-gray-700 text-sm text-gray-300">
                 Last updated: <span className="text-white font-semibold">{lastUpdated}</span>
@@ -176,13 +204,18 @@ export default function Dashboard() {
               Refresh State
             </button>
           </div>
+          {statusMessage ? (
+            <div className="mt-4 rounded-xl border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-200">
+              {statusMessage}
+            </div>
+          ) : null}
         </div>
 
         <div className="rounded-3xl border border-gray-800 bg-gray-900/70 p-6">
           <p className="text-xs uppercase tracking-[0.3em] text-emerald-400 mb-3">Jobs</p>
           <h2 className="text-2xl font-semibold mb-4">Recent generation jobs</h2>
           <div className="space-y-3">
-            {jobs.length > 0 ? jobs.map((job) => (
+            {jobs && jobs.length > 0 ? jobs.map((job) => (
               <div key={job.id} className="rounded-2xl border border-gray-800 bg-black/20 p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
@@ -247,7 +280,7 @@ export default function Dashboard() {
                             clip.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400' : 
                             clip.status === 'rejected' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'
                         }`}>
-                            {clip.status.toUpperCase()}
+                            {(clip.status || 'pending').toUpperCase()}
                         </span>
                     </div>
 

@@ -9,3 +9,5 @@ Alur dasarnya:
 5. Upload otomatis ke platform.
 
 Tujuan utamanya adalah meminimalkan intervensi manual dan membuat produksi bisa berjalan dalam skala besar.
+
+Untuk tahap distribusi yang lebih rinci, lihat [Distribution Matrix](./distribution-matrix.md).
