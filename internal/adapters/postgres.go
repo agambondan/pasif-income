@@ -113,6 +113,16 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 	}
 
 	_, err = db.Exec(`
+		ALTER TABLE connected_accounts ADD COLUMN IF NOT EXISTS auth_method TEXT DEFAULT 'chromium_profile';
+		ALTER TABLE connected_accounts ADD COLUMN IF NOT EXISTS email TEXT;
+		ALTER TABLE connected_accounts ADD COLUMN IF NOT EXISTS profile_path TEXT;
+		ALTER TABLE connected_accounts ADD COLUMN IF NOT EXISTS refresh_token TEXT;
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to alter connected_accounts table: %v", err)
+	}
+
+	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS distribution_jobs (
 			id SERIAL PRIMARY KEY,
 			generation_job_id TEXT REFERENCES generation_jobs(id),
