@@ -2,12 +2,36 @@
 
 Dokumen ini menjelaskan pendekatan auth untuk upload otomatis ke platform sosial.
 
+## Current State
+
+- Backend sekarang baru punya stub OAuth flow.
+- `/api/auth/{platform}` masih redirect mock.
+- callback masih membuat connected account dummy.
+- Ini cukup untuk tracing UI dan database wiring, tapi belum aman untuk production.
+
 ## Prinsip
 
 - Jangan minta user mengisi password platform di dashboard.
-- Pakai OAuth / official account linking.
-- Simpan token di backend, bukan di browser.
+- Pakai OAuth resmi kalau platform memang menyediakan API upload yang matang.
+- Untuk MVP browser, pakai 1 email = 1 Chromium profile.
+- Simpan token atau session state di backend, bukan di browser.
 - Sediakan revoke flow dan status koneksi per akun.
+
+## MVP Direction
+
+MVP sekarang diarahkan ke:
+
+- `API` untuk platform yang memang stabil dan resmi
+- `Chromium profile automation` untuk platform yang tidak enak di API
+
+Aturan operasional yang dipakai:
+
+- 1 email platform = 1 Chromium profile
+- 1 Chromium profile hanya dipakai untuk 1 platform account
+- setelah akun login sekali, upload berikutnya memakai profile yang sama
+- kalau platform punya API yang layak, backend tetap boleh pakai jalur API
+
+Untuk tahap awal, `browser` di UI berarti `chromium_profile`.
 
 ## YouTube
 
@@ -51,6 +75,7 @@ Backend simpan data ini:
 - expiry
 - scopes
 - status koneksi
+- chromium profile path untuk akun browser-based
 
 Dan expose endpoint seperti:
 

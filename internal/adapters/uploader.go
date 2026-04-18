@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agambondan/pasif-income/internal/core/domain"
 	"github.com/agambondan/pasif-income/internal/core/ports"
 )
 
@@ -31,6 +32,18 @@ func (u *MockUploader) Upload(ctx context.Context, filePath, title, description 
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+type MockPublisher struct{}
+
+func NewMockPublisher() *MockPublisher {
+	return &MockPublisher{}
+}
+
+func (m *MockPublisher) Publish(ctx context.Context, filePath, title, description string, account domain.ConnectedAccount) (string, error) {
+	log.Printf("[Mock Publisher] Publishing %s to %s (%s) for %s\n", filePath, account.PlatformID, account.AuthMethod, account.DisplayName)
+	time.Sleep(2 * time.Second)
+	return "mock-external-id-" + time.Now().Format("150405"), nil
 }
 
 type MinIOUploader struct {

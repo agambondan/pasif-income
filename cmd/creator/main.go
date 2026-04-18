@@ -45,11 +45,12 @@ func main() {
 	}
 
 	log.Printf("Starting generator for Niche: %s, Topic: %s\n", niche, topic)
-	err := service.GenerateContent(ctx, niche, topic)
+	story, err := service.GenerateContent(ctx, niche, topic)
 	if err != nil {
 		log.Fatalf("Generation failed: %v", err)
 	}
 
+	log.Printf("Generated video at: %s\n", story.VideoOutput)
 	log.Println("Generation completed successfully!")
 }
 

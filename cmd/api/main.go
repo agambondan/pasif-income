@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -55,14 +56,25 @@ func main() {
 		platform:  services.NewPlatformService(repo),
 	}
 
+	if os.Getenv("GEMINI_API_KEY") == "" {
+		log.Println("CRITICAL ERROR: GEMINI_API_KEY is not set. Generation will FAIL.")
+		log.Println("Please set it in your .env file or environment variables.")
+	}
+
 	// Create default user for testing
 	if repo != nil {
 		_ = api.auth.Register(context.Background(), "admin", "admin123")
 	}
 
+	if repo != nil {
+		publisherWorker := services.NewPublisherService(repo, newPublisherFromEnv())
+		go publisherWorker.StartWorker(context.Background())
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", api.healthHandler)
 	mux.HandleFunc("/api/auth/login", api.loginHandler)
+	mux.HandleFunc("/api/auth/logout", api.logoutHandler)
 	mux.HandleFunc("/api/platforms", api.platformsHandler)
 	mux.HandleFunc("/api/accounts", api.accountsHandler)
 	mux.HandleFunc("/api/accounts/", api.deleteAccountHandler)
@@ -130,7 +142,40 @@ func (a *apiServer) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sessionToken, err := a.auth.CreateSession(r.Context(), user.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cf_session",
+		Value:    sessionToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int((30 * 24 * time.Hour).Seconds()),
+	})
+
 	writeJSON(w, http.StatusOK, user)
+}
+
+func (a *apiServer) logoutHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if token, ok := sessionTokenFromRequest(r); ok && a.repo != nil {
+		_ = a.repo.DeleteSession(r.Context(), token)
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cf_session",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *apiServer) platformsHandler(w http.ResponseWriter, r *http.Request) {
@@ -143,8 +188,12 @@ func (a *apiServer) accountsHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	// Stubbing user_id=1 for now as there's no session middleware yet.
-	accounts, err := a.repo.ListConnectedAccounts(r.Context(), 1)
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	accounts, err := a.repo.ListConnectedAccounts(r.Context(), userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -157,9 +206,23 @@ func (a *apiServer) deleteAccountHandler(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
 	if id == "" {
 		http.NotFound(w, r)
+		return
+	}
+	account, err := a.repo.GetConnectedAccountByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if account.UserID != userID {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	if err := a.repo.DeleteConnectedAccount(r.Context(), id); err != nil {
@@ -170,30 +233,40 @@ func (a *apiServer) deleteAccountHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (a *apiServer) oauthHandler(w http.ResponseWriter, r *http.Request) {
-	// Simple stub for OAuth flow
-	// /api/auth/{platform} -> redirect to provider (mock)
-	// /api/auth/{platform}/callback -> save token
+	// Simple stub for OAuth/Chromium profile flow
+	// /api/auth/{platform}?method=chromium_profile -> redirect to provider (mock)
 	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/auth/"), "/")
 	if len(pathParts) == 0 || pathParts[0] == "" {
 		http.NotFound(w, r)
 		return
 	}
 	platform := pathParts[0]
+	method := r.URL.Query().Get("method")
+	if method == "" {
+		method = domain.AuthMethodChromiumProfile
+	}
+	if method == "browser" {
+		method = domain.AuthMethodChromiumProfile
+	}
 
 	if len(pathParts) > 1 && pathParts[1] == "callback" {
-		// Mock callback: just save a dummy connected account
-		acc := &domain.ConnectedAccount{
-			ID:          platform + "-test-" + makeJobID()[:8],
-			UserID:      1,
-			PlatformID:  platform,
-			DisplayName: "Test " + strings.ToUpper(platform) + " Account",
-			AccessToken: "dummy-token",
-			Expiry:      time.Now().Add(365 * 24 * time.Hour),
-			CreatedAt:   time.Now(),
+		userID, err := a.currentUserID(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
 		}
-		if err := a.repo.SaveConnectedAccount(r.Context(), acc); err != nil {
+		email := r.URL.Query().Get("email")
+		if email == "" {
+			email = "test-operator@gmail.com"
+		}
+		displayName := "Test " + strings.ToUpper(platform) + " (" + strings.ToUpper(strings.ReplaceAll(method, "_", " ")) + ")"
+		acc, err := a.auth.LinkConnectedAccount(r.Context(), userID, platform, displayName, email, method)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if method == domain.AuthMethodChromiumProfile {
+			log.Printf("Chromium profile ready for %s at %s\n", acc.Email, acc.ProfilePath)
 		}
 		// Redirect back to frontend integrations page
 		http.Redirect(w, r, "http://localhost:13100/integrations", http.StatusFound)
@@ -201,7 +274,7 @@ func (a *apiServer) oauthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Mock redirect
-	http.Redirect(w, r, "/api/auth/"+platform+"/callback?code=mock", http.StatusFound)
+	http.Redirect(w, r, "/api/auth/"+platform+"/callback?code=mock&method="+method+"&email=test-operator%40gmail.com", http.StatusFound)
 }
 
 func (a *apiServer) videosHandler(w http.ResponseWriter, r *http.Request) {
@@ -258,6 +331,10 @@ func newUploaderFromEnv() ports.Uploader {
 	}
 
 	return uploader
+}
+
+func newPublisherFromEnv() ports.Publisher {
+	return adapters.NewDistributionPublisher()
 }
 
 func postgresDSN() string {
@@ -335,6 +412,12 @@ func (a *apiServer) generateHandler(w http.ResponseWriter, r *http.Request) {
 			topic = "how to control your mind"
 		}
 
+		userID, err := a.currentUserID(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+
 		job := domain.GenerationJob{
 			ID:        makeJobID(),
 			Niche:     niche,
@@ -352,7 +435,7 @@ func (a *apiServer) generateHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		go a.runGeneration(job.ID, niche, topic, req.Destinations)
+		go a.runGeneration(userID, job.ID, niche, topic, req.Destinations)
 
 		writeJSON(w, http.StatusAccepted, job)
 	default:
@@ -397,6 +480,21 @@ func (a *apiServer) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.updateJobStatusHandler(w, r, jobID, true)
+		return
+	}
+
+	if strings.HasSuffix(id, "/distributions") {
+		jobID := strings.TrimSuffix(id, "/distributions")
+		jobID = strings.TrimSuffix(jobID, "/")
+		if jobID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		a.distributionsHandler(w, r, jobID)
 		return
 	}
 
@@ -457,7 +555,22 @@ func (a *apiServer) updateJobStatusHandler(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, job)
 }
 
-func (a *apiServer) runGeneration(jobID, niche, topic string, destinations []domain.Destination) {
+func (a *apiServer) distributionsHandler(w http.ResponseWriter, r *http.Request, generationJobID string) {
+	if a.repo == nil {
+		http.Error(w, "repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	jobs, err := a.repo.ListDistributionJobs(r.Context(), generationJobID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, jobs)
+}
+
+func (a *apiServer) runGeneration(userID int, jobID, niche, topic string, destinations []domain.Destination) {
 	if a.repo != nil {
 		if err := a.repo.UpdateJobStatus(context.Background(), jobID, "running", ""); err != nil {
 			log.Printf("failed to mark job running: %v\n", err)
@@ -474,21 +587,45 @@ func (a *apiServer) runGeneration(jobID, niche, topic string, destinations []dom
 		return
 	}
 
-	if err := a.generator.GenerateContent(ctx, niche, topic); err != nil {
+	story, err := a.generator.GenerateContent(ctx, niche, topic)
+	if err != nil {
 		if a.repo != nil {
 			_ = a.repo.UpdateJobStatus(ctx, jobID, "failed", err.Error())
 		}
 		return
 	}
 
+	description := fmt.Sprintf("#%s #%s #ai #faceless", niche, strings.ReplaceAll(topic, " ", ""))
+
+	if a.repo != nil {
+		if err := a.repo.UpdateJobArtifact(ctx, jobID, story.Title, description, story.VideoOutput); err != nil {
+			log.Printf("failed to store job artifact: %v\n", err)
+		}
+	}
+
 	// Create distribution jobs if successful
 	if a.repo != nil {
 		for _, dest := range destinations {
+			account, err := a.repo.GetConnectedAccountByID(ctx, dest.AccountID)
+			if err != nil {
+				log.Printf("failed to load account %s: %v\n", dest.AccountID, err)
+				continue
+			}
+			if account.UserID != userID {
+				log.Printf("skipping account %s because it does not belong to current user", account.ID)
+				continue
+			}
+			if account.PlatformID != dest.Platform {
+				log.Printf("destination platform mismatch for account %s", account.ID)
+				continue
+			}
+
 			distJob := domain.DistributionJob{
 				GenerationJobID: jobID,
 				AccountID:       dest.AccountID,
 				Platform:        dest.Platform,
 				Status:          "pending",
+				StatusDetail:    "queued",
 				CreatedAt:       time.Now(),
 				UpdatedAt:       time.Now(),
 			}
@@ -501,6 +638,29 @@ func (a *apiServer) runGeneration(jobID, niche, topic string, destinations []dom
 			log.Printf("failed to mark job completed: %v\n", err)
 		}
 	}
+}
+
+func (a *apiServer) currentUserID(r *http.Request) (int, error) {
+	if a.repo == nil {
+		return 0, errors.New("repository unavailable")
+	}
+	token, ok := sessionTokenFromRequest(r)
+	if !ok {
+		return 0, errors.New("unauthorized")
+	}
+	user, err := a.repo.GetUserBySessionToken(r.Context(), token)
+	if err != nil {
+		return 0, errors.New("unauthorized")
+	}
+	return user.ID, nil
+}
+
+func sessionTokenFromRequest(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie("cf_session")
+	if err != nil || cookie.Value == "" {
+		return "", false
+	}
+	return cookie.Value, true
 }
 
 func makeJobID() string {

@@ -13,6 +13,7 @@ type DistributionJob struct {
 	AccountID       string    `json:"account_id"`
 	Platform        string    `json:"platform"`
 	Status          string    `json:"status"`
+	StatusDetail    string    `json:"status_detail"`
 	ExternalID      string    `json:"external_id"`
 	Error           string    `json:"error"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -24,6 +25,9 @@ type GenerationJob struct {
 	ID          string     `json:"id"`
 	Niche       string     `json:"niche"`
 	Topic       string     `json:"topic"`
+	Title       string     `json:"title,omitempty"`
+	Description string     `json:"description,omitempty"`
+	VideoPath   string     `json:"video_path,omitempty"`
 	Status      string     `json:"status"`
 	Error       string     `json:"error,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`

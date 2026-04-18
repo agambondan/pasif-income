@@ -2,7 +2,9 @@ package adapters
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -44,6 +46,9 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 			id TEXT PRIMARY KEY,
 			niche TEXT NOT NULL,
 			topic TEXT NOT NULL,
+			title TEXT DEFAULT '',
+			description TEXT DEFAULT '',
+			video_path TEXT DEFAULT '',
 			status TEXT NOT NULL,
 			error TEXT,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -53,6 +58,15 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create jobs table: %v", err)
+	}
+
+	_, err = db.Exec(`
+		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS title TEXT DEFAULT '';
+		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
+		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS video_path TEXT DEFAULT '';
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to alter generation_jobs table: %v", err)
 	}
 
 	_, err = db.Exec(`
@@ -68,11 +82,26 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 	}
 
 	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS sessions (
+			token TEXT PRIMARY KEY,
+			user_id INT REFERENCES users(id),
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			expires_at TIMESTAMP NOT NULL
+		)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sessions table: %v", err)
+	}
+
+	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS connected_accounts (
 			id TEXT PRIMARY KEY,
 			user_id INT REFERENCES users(id),
 			platform_id TEXT NOT NULL,
 			display_name TEXT NOT NULL,
+			auth_method TEXT DEFAULT 'chromium_profile',
+			email TEXT,
+			profile_path TEXT,
 			access_token TEXT,
 			refresh_token TEXT,
 			expiry TIMESTAMP,
@@ -90,6 +119,7 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 			account_id TEXT REFERENCES connected_accounts(id),
 			platform TEXT NOT NULL,
 			status TEXT DEFAULT 'pending',
+			status_detail TEXT DEFAULT '',
 			external_id TEXT,
 			error TEXT,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -98,6 +128,13 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create distribution_jobs table: %v", err)
+	}
+
+	_, err = db.Exec(`
+		ALTER TABLE distribution_jobs ADD COLUMN IF NOT EXISTS status_detail TEXT DEFAULT '';
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to alter distribution_jobs table: %v", err)
 	}
 
 	return &PostgresRepository{db}, nil
@@ -118,8 +155,45 @@ func (r *PostgresRepository) GetUserByUsername(ctx context.Context, username str
 	return &u, nil
 }
 
+func (r *PostgresRepository) CreateSession(ctx context.Context, userID int) (string, error) {
+	token, err := randomToken(32)
+	if err != nil {
+		return "", err
+	}
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO sessions (token, user_id, expires_at)
+		VALUES ($1, $2, $3)
+	`, token, userID, time.Now().Add(30*24*time.Hour))
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func (r *PostgresRepository) GetUserBySessionToken(ctx context.Context, sessionToken string) (*domain.User, error) {
+	var u domain.User
+	err := r.db.QueryRowContext(ctx, `
+		SELECT u.id, u.username, u.password_hash, u.created_at
+		FROM sessions s
+		JOIN users u ON u.id = s.user_id
+		WHERE s.token = $1 AND s.expires_at > CURRENT_TIMESTAMP
+	`, sessionToken).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (r *PostgresRepository) DeleteSession(ctx context.Context, sessionToken string) error {
+	_, err := r.db.ExecContext(ctx, "DELETE FROM sessions WHERE token = $1", sessionToken)
+	return err
+}
+
 func (r *PostgresRepository) ListConnectedAccounts(ctx context.Context, userID int) ([]domain.ConnectedAccount, error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT id, user_id, platform_id, display_name, COALESCE(access_token, ''), COALESCE(refresh_token, ''), expiry, created_at FROM connected_accounts WHERE user_id = $1", userID)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, user_id, platform_id, display_name, auth_method, COALESCE(email, ''), COALESCE(profile_path, ''), COALESCE(access_token, ''), expiry, created_at 
+		FROM connected_accounts WHERE user_id = $1
+	`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +202,7 @@ func (r *PostgresRepository) ListConnectedAccounts(ctx context.Context, userID i
 	var accs []domain.ConnectedAccount
 	for rows.Next() {
 		var a domain.ConnectedAccount
-		if err := rows.Scan(&a.ID, &a.UserID, &a.PlatformID, &a.DisplayName, &a.AccessToken, &a.RefreshToken, &a.Expiry, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.UserID, &a.PlatformID, &a.DisplayName, &a.AuthMethod, &a.Email, &a.ProfilePath, &a.AccessToken, &a.Expiry, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		accs = append(accs, a)
@@ -136,16 +210,31 @@ func (r *PostgresRepository) ListConnectedAccounts(ctx context.Context, userID i
 	return accs, nil
 }
 
+func (r *PostgresRepository) GetConnectedAccountByID(ctx context.Context, accountID string) (*domain.ConnectedAccount, error) {
+	var a domain.ConnectedAccount
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, user_id, platform_id, display_name, auth_method, COALESCE(email, ''), COALESCE(profile_path, ''), COALESCE(access_token, ''), expiry, created_at
+		FROM connected_accounts
+		WHERE id = $1
+	`, accountID).Scan(&a.ID, &a.UserID, &a.PlatformID, &a.DisplayName, &a.AuthMethod, &a.Email, &a.ProfilePath, &a.AccessToken, &a.Expiry, &a.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
 func (r *PostgresRepository) SaveConnectedAccount(ctx context.Context, acc *domain.ConnectedAccount) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO connected_accounts (id, user_id, platform_id, display_name, access_token, refresh_token, expiry, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO connected_accounts (id, user_id, platform_id, display_name, auth_method, email, profile_path, access_token, expiry, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
+			display_name = EXCLUDED.display_name,
 			access_token = EXCLUDED.access_token,
-			refresh_token = EXCLUDED.refresh_token,
 			expiry = EXCLUDED.expiry,
-			display_name = EXCLUDED.display_name
-	`, acc.ID, acc.UserID, acc.PlatformID, acc.DisplayName, acc.AccessToken, acc.RefreshToken, acc.Expiry, acc.CreatedAt)
+			auth_method = EXCLUDED.auth_method,
+			email = EXCLUDED.email,
+			profile_path = EXCLUDED.profile_path
+	`, acc.ID, acc.UserID, acc.PlatformID, acc.DisplayName, acc.AuthMethod, acc.Email, acc.ProfilePath, acc.AccessToken, acc.Expiry, acc.CreatedAt)
 	return err
 }
 
@@ -156,15 +245,15 @@ func (r *PostgresRepository) DeleteConnectedAccount(ctx context.Context, account
 
 func (r *PostgresRepository) CreateDistributionJob(ctx context.Context, job *domain.DistributionJob) error {
 	err := r.db.QueryRowContext(ctx, `
-		INSERT INTO distribution_jobs (generation_job_id, account_id, platform, status, external_id, error, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
-	`, job.GenerationJobID, job.AccountID, job.Platform, job.Status, nullString(job.ExternalID), nullString(job.Error), job.CreatedAt, job.UpdatedAt).Scan(&job.ID)
+		INSERT INTO distribution_jobs (generation_job_id, account_id, platform, status, status_detail, external_id, error, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
+	`, job.GenerationJobID, job.AccountID, job.Platform, job.Status, nullString(job.StatusDetail), nullString(job.ExternalID), nullString(job.Error), job.CreatedAt, job.UpdatedAt).Scan(&job.ID)
 	return err
 }
 
 func (r *PostgresRepository) ListDistributionJobs(ctx context.Context, generationJobID string) ([]domain.DistributionJob, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, generation_job_id, account_id, platform, status, COALESCE(external_id, ''), COALESCE(error, ''), created_at, updated_at
+		SELECT id, generation_job_id, account_id, platform, status, COALESCE(status_detail, ''), COALESCE(external_id, ''), COALESCE(error, ''), created_at, updated_at
 		FROM distribution_jobs
 		WHERE generation_job_id = $1
 		ORDER BY created_at DESC
@@ -177,10 +266,11 @@ func (r *PostgresRepository) ListDistributionJobs(ctx context.Context, generatio
 	jobs := []domain.DistributionJob{}
 	for rows.Next() {
 		var job domain.DistributionJob
-		var extID, errStr string
-		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &extID, &errStr, &job.CreatedAt, &job.UpdatedAt); err != nil {
+		var extID, errStr, detail string
+		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &job.CreatedAt, &job.UpdatedAt); err != nil {
 			return nil, err
 		}
+		job.StatusDetail = detail
 		job.ExternalID = extID
 		job.Error = errStr
 		jobs = append(jobs, job)
@@ -188,12 +278,39 @@ func (r *PostgresRepository) ListDistributionJobs(ctx context.Context, generatio
 	return jobs, nil
 }
 
-func (r *PostgresRepository) UpdateDistributionJobStatus(ctx context.Context, jobID int, status string, externalID string, errMsg string) error {
+func (r *PostgresRepository) ListPendingDistributionJobs(ctx context.Context) ([]domain.DistributionJob, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, generation_job_id, account_id, platform, status, COALESCE(status_detail, ''), COALESCE(external_id, ''), COALESCE(error, ''), created_at, updated_at
+		FROM distribution_jobs
+		WHERE status = 'pending'
+		ORDER BY created_at ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	jobs := []domain.DistributionJob{}
+	for rows.Next() {
+		var job domain.DistributionJob
+		var extID, errStr, detail string
+		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &job.CreatedAt, &job.UpdatedAt); err != nil {
+			return nil, err
+		}
+		job.StatusDetail = detail
+		job.ExternalID = extID
+		job.Error = errStr
+		jobs = append(jobs, job)
+	}
+	return jobs, nil
+}
+
+func (r *PostgresRepository) UpdateDistributionJobStatus(ctx context.Context, jobID int, status string, statusDetail string, externalID string, errMsg string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE distribution_jobs
-		SET status = $1, external_id = $2, error = $3, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $4
-	`, status, nullString(externalID), nullString(errMsg), jobID)
+		SET status = $1, status_detail = $2, external_id = $3, error = $4, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $5
+	`, status, nullString(statusDetail), nullString(externalID), nullString(errMsg), jobID)
 	return err
 }
 
@@ -235,9 +352,18 @@ func (r *PostgresRepository) ListClips(ctx context.Context) ([]domain.Clip, erro
 
 func (r *PostgresRepository) CreateJob(ctx context.Context, job *domain.GenerationJob) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO generation_jobs (id, niche, topic, status, error, created_at, updated_at, completed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, job.ID, job.Niche, job.Topic, job.Status, nullString(job.Error), job.CreatedAt, job.UpdatedAt, nullTimePtr(job.CompletedAt))
+		INSERT INTO generation_jobs (id, niche, topic, title, description, video_path, status, error, created_at, updated_at, completed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, job.ID, job.Niche, job.Topic, job.Title, job.Description, job.VideoPath, job.Status, nullString(job.Error), job.CreatedAt, job.UpdatedAt, nullTimePtr(job.CompletedAt))
+	return err
+}
+
+func (r *PostgresRepository) UpdateJobArtifact(ctx context.Context, jobID string, title string, description string, videoPath string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE generation_jobs
+		SET title = $1, description = $2, video_path = $3, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $4
+	`, title, description, videoPath, jobID)
 	return err
 }
 
@@ -259,9 +385,17 @@ func (r *PostgresRepository) UpdateJobStatus(ctx context.Context, jobID string, 
 	return err
 }
 
+func randomToken(size int) (string, error) {
+	b := make([]byte, size)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
 func (r *PostgresRepository) GetJob(ctx context.Context, jobID string) (*domain.GenerationJob, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, niche, topic, status, COALESCE(error, ''), created_at, updated_at, completed_at
+		SELECT id, niche, topic, COALESCE(title, ''), COALESCE(description, ''), COALESCE(video_path, ''), status, COALESCE(error, ''), created_at, updated_at, completed_at
 		FROM generation_jobs
 		WHERE id = $1
 	`, jobID)
@@ -269,7 +403,7 @@ func (r *PostgresRepository) GetJob(ctx context.Context, jobID string) (*domain.
 	var job domain.GenerationJob
 	var errorText string
 	var completedAt sql.NullTime
-	if err := row.Scan(&job.ID, &job.Niche, &job.Topic, &job.Status, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt); err != nil {
+	if err := row.Scan(&job.ID, &job.Niche, &job.Topic, &job.Title, &job.Description, &job.VideoPath, &job.Status, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt); err != nil {
 		return nil, err
 	}
 	job.Error = errorText
@@ -281,7 +415,7 @@ func (r *PostgresRepository) GetJob(ctx context.Context, jobID string) (*domain.
 
 func (r *PostgresRepository) ListJobs(ctx context.Context) ([]domain.GenerationJob, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, niche, topic, status, COALESCE(error, ''), created_at, updated_at, completed_at
+		SELECT id, niche, topic, COALESCE(title, ''), COALESCE(description, ''), COALESCE(video_path, ''), status, COALESCE(error, ''), created_at, updated_at, completed_at
 		FROM generation_jobs
 		ORDER BY updated_at DESC
 	`)
@@ -295,7 +429,7 @@ func (r *PostgresRepository) ListJobs(ctx context.Context) ([]domain.GenerationJ
 		var job domain.GenerationJob
 		var errorText string
 		var completedAt sql.NullTime
-		if err := rows.Scan(&job.ID, &job.Niche, &job.Topic, &job.Status, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt); err != nil {
+		if err := rows.Scan(&job.ID, &job.Niche, &job.Topic, &job.Title, &job.Description, &job.VideoPath, &job.Status, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt); err != nil {
 			return nil, err
 		}
 		job.Error = errorText

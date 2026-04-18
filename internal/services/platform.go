@@ -16,9 +16,9 @@ func NewPlatformService(repo ports.Repository) *PlatformService {
 
 func (s *PlatformService) GetSupportedPlatforms() []domain.Platform {
 	return []domain.Platform{
-		{ID: "youtube", Name: "YouTube", AuthType: "oauth", Description: "Upload to YouTube Shorts"},
-		{ID: "tiktok", Name: "TikTok", AuthType: "oauth", Description: "Upload to TikTok"},
-		{ID: "instagram", Name: "Instagram", AuthType: "oauth", Description: "Upload to Instagram Reels"},
+		{ID: "youtube", Name: "YouTube", Methods: []string{domain.AuthMethodChromiumProfile, domain.AuthMethodAPI}, Description: "Upload to YouTube Shorts via API or Chromium profile automation"},
+		{ID: "tiktok", Name: "TikTok", Methods: []string{domain.AuthMethodChromiumProfile, domain.AuthMethodAPI}, Description: "Upload to TikTok via API or Chromium profile automation"},
+		{ID: "instagram", Name: "Instagram", Methods: []string{domain.AuthMethodChromiumProfile, domain.AuthMethodAPI}, Description: "Upload to Instagram Reels via API or Chromium profile automation"},
 	}
 }
 

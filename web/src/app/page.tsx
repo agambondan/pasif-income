@@ -1,14 +1,36 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Clip } from '@/types/clip';
+
+type ConnectedAccount = {
+  id: string;
+  platform_id: string;
+  display_name: string;
+};
 
 type GenerationJob = {
   id: string;
   niche: string;
   topic: string;
+  title?: string;
+  description?: string;
+  video_path?: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   error?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type DistributionJob = {
+  id: number;
+  generation_job_id: string;
+  account_id: string;
+  platform: string;
+  status: 'pending' | 'uploading' | 'completed' | 'failed';
+  status_detail: string;
+  external_id: string;
+  error: string;
   created_at: string;
   updated_at: string;
 };
@@ -40,12 +62,15 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState('Never');
   const [niche, setNiche] = useState('stoicism');
   const [topic, setTopic] = useState('how to control your mind');
-  const [accounts, setAccounts] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<string>('');
+  const [distributionJobs, setDistributionJobs] = useState<DistributionJob[]>([]);
+  const selectedJobIdRef = useRef('');
 
   const fetchAccounts = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/accounts`);
+      const res = await fetch(`${API_BASE_URL}/api/accounts`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setAccounts(data || []);
@@ -57,7 +82,7 @@ export default function Dashboard() {
 
   const fetchClips = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/clips`);
+      const res = await fetch(`${API_BASE_URL}/api/clips`, { credentials: 'include' });
       if (!res.ok) {
         console.error(`Failed to fetch clips: ${res.status}`);
         return;
@@ -69,23 +94,46 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchDistributionJobs = useCallback(async (jobId: string) => {
+    if (!jobId) {
+      setDistributionJobs([]);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/distributions`, { credentials: 'include' });
+      if (!res.ok) {
+        return;
+      }
+      const data = await res.json();
+      setDistributionJobs(data || []);
+    } catch (err) {
+      console.error('Failed to fetch distribution jobs:', err);
+    }
+  }, []);
+
   const fetchJobs = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/jobs`);
+      const res = await fetch(`${API_BASE_URL}/api/jobs`, { credentials: 'include' });
       if (!res.ok) {
         console.error(`Failed to fetch jobs: ${res.status}`);
         return;
       }
       const data = await res.json();
-      setJobs(data || []);
+      const nextJobs = data || [];
+      setJobs(nextJobs);
+      if (!selectedJobIdRef.current && nextJobs.length > 0) {
+        selectedJobIdRef.current = nextJobs[0].id;
+        setSelectedJobId(nextJobs[0].id);
+        void fetchDistributionJobs(nextJobs[0].id);
+      }
     } catch (err) {
       console.error('Failed to fetch jobs:', err);
     }
-  }, []);
+  }, [fetchDistributionJobs]);
 
   const fetchBackendHealth = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/health`);
+      const res = await fetch(`${API_BASE_URL}/api/health`, { credentials: 'include' });
       setBackendOnline(res.ok);
     } catch (err) {
       console.error('Failed to fetch backend health:', err);
@@ -96,14 +144,20 @@ export default function Dashboard() {
   const refreshAll = useCallback(async () => {
     setLoading(true);
     await Promise.all([fetchBackendHealth(), fetchClips(), fetchJobs(), fetchAccounts()]);
+    if (selectedJobIdRef.current) {
+      await fetchDistributionJobs(selectedJobIdRef.current);
+    }
     setLoading(false);
     setLastUpdated(new Date().toLocaleString());
-  }, [fetchBackendHealth, fetchClips, fetchJobs, fetchAccounts]);
+  }, [fetchBackendHealth, fetchClips, fetchJobs, fetchAccounts, fetchDistributionJobs]);
 
   const pollState = useCallback(async () => {
     await Promise.all([fetchBackendHealth(), fetchClips(), fetchJobs(), fetchAccounts()]);
+    if (selectedJobIdRef.current) {
+      await fetchDistributionJobs(selectedJobIdRef.current);
+    }
     setLastUpdated(new Date().toLocaleString());
-  }, [fetchBackendHealth, fetchClips, fetchJobs, fetchAccounts]);
+  }, [fetchBackendHealth, fetchClips, fetchJobs, fetchAccounts, fetchDistributionJobs]);
 
   useEffect(() => {
     Promise.resolve().then(() => refreshAll());
@@ -114,11 +168,18 @@ export default function Dashboard() {
     return () => window.clearInterval(interval);
   }, [refreshAll, pollState]);
 
+  const handleSelectJob = (jobId: string) => {
+    selectedJobIdRef.current = jobId;
+    setSelectedJobId(jobId);
+    void fetchDistributionJobs(jobId);
+  };
+
   const updateStatus = async (id: string, status: Clip['status']) => {
     try {
       await fetch(`${API_BASE_URL}/api/clips`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ id, status }),
       });
       await fetchClips();
@@ -134,12 +195,13 @@ export default function Dashboard() {
 
       const destinations = selectedAccounts.map(id => {
         const acc = accounts.find(a => a.id === id);
-        return { platform: acc.platform_id, account_id: id };
+        return { platform: acc?.platform_id || 'unknown', account_id: id };
       });
 
       const res = await fetch(`${API_BASE_URL}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ niche, topic, destinations }),
       });
       if (!res.ok) {
@@ -148,6 +210,7 @@ export default function Dashboard() {
       }
       const job = await res.json();
       setStatusMessage(`Job ${job.id} queued for ${job.niche}: ${job.topic}`);
+      handleSelectJob(job.id);
       await Promise.all([fetchClips(), fetchJobs()]);
     } catch (err) {
       console.error('Failed to start generation:', err);
@@ -173,6 +236,9 @@ export default function Dashboard() {
             </button>
             <div className={`px-6 py-3 rounded-2xl border text-xs font-black tracking-widest ${backendOnline ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
                 {backendOnline ? '● BACKEND ONLINE' : '● BACKEND OFFLINE'}
+            </div>
+            <div className="px-6 py-3 rounded-2xl border border-white/5 bg-zinc-900 text-[10px] font-bold tracking-widest text-zinc-500">
+                UPDATED {lastUpdated}
             </div>
         </div>
       </div>
@@ -265,7 +331,11 @@ export default function Dashboard() {
           
           <div className="space-y-4 flex-1 overflow-auto max-h-[500px] pr-2">
             {jobs && jobs.length > 0 ? jobs.map((job) => (
-              <div key={job.id} className="rounded-2xl border border-white/5 bg-black/40 p-5 hover:border-white/20 transition-all group/job">
+              <div
+                key={job.id}
+                onClick={() => handleSelectJob(job.id)}
+                className={`rounded-2xl border bg-black/40 p-5 transition-all group/job cursor-pointer ${selectedJobId === job.id ? 'border-emerald-500/40 shadow-lg shadow-emerald-500/5' : 'border-white/5 hover:border-white/20'}`}
+              >
                 <div className="flex items-start justify-between gap-4 mb-3">
                   <div>
                     <p className="font-black text-white text-sm group-hover:text-blue-400 transition-colors uppercase tracking-tight">{job.niche}</p>
@@ -287,6 +357,45 @@ export default function Dashboard() {
                 <div className="text-4xl mb-4">💤</div>
                 <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Queue Empty</p>
               </div>
+            )}
+          </div>
+
+          <div className="mt-8 rounded-2xl border border-white/5 bg-black/30 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Publish History</p>
+                <h4 className="text-lg font-black text-white">Distribution Jobs</h4>
+              </div>
+              <span className="text-[10px] font-bold text-zinc-500">
+                {selectedJobId ? selectedJobId : 'No job selected'}
+              </span>
+            </div>
+
+            {distributionJobs.length > 0 ? (
+              <div className="space-y-3 max-h-56 overflow-auto pr-1">
+                {distributionJobs.map((dist) => (
+                  <div key={dist.id} className="rounded-2xl border border-white/5 bg-black/40 p-4">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div>
+                        <p className="text-sm font-black text-white uppercase tracking-tight">{dist.platform}</p>
+                        <p className="text-[10px] font-mono text-zinc-500">acct {dist.account_id}</p>
+                      </div>
+                      <span className={`rounded-lg border px-2 py-1 text-[9px] font-black uppercase tracking-widest ${dist.status === 'completed' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : dist.status === 'failed' ? 'bg-red-500/15 text-red-300 border-red-500/30' : 'bg-amber-500/15 text-amber-300 border-amber-500/30'}`}>
+                        {dist.status}
+                      </span>
+                    </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Stage</p>
+                        <p className="text-xs text-zinc-300 break-all">{dist.status_detail || '-'}</p>
+                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">External ID</p>
+                        <p className="text-xs text-zinc-300 break-all">{dist.external_id || '-'}</p>
+                        {dist.error && <p className="text-xs text-red-400 break-all">{dist.error}</p>}
+                      </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-500">No publish history for this job yet.</p>
             )}
           </div>
         </div>

@@ -9,7 +9,8 @@ This project automates the conversion of long-form videos into viral short-form 
 - **Dynamic Captions**: Ready-to-use pipeline for burning in captions (WIP).
 - **Self-Hosted**: Docker-based architecture with local transcription and storage.
 - **Distribution Matrix**: Traceable plan for multi-platform and multi-account upload.
-- **Platform Auth**: OAuth-first account linking for upload destinations.
+- **Platform Auth**: API upload plus Chromium profile linking for upload destinations.
+- **Implementation Status**: Single source of truth for done, mock, and planned work.
 
 ## Tech Stack
 
@@ -44,4 +45,5 @@ This project automates the conversion of long-form videos into viral short-form 
 - `internal/adapters`: Implementations for third-party tools and APIs.
 - `scripts`: Helper scripts (e.g., face tracking).
 - `docs/distribution-matrix.md`: Current target model for publish destinations and dashboard traceability.
-- `docs/platform-auth.md`: OAuth-first approach for linking upload accounts.
+- `docs/platform-auth.md`: API-first plus Chromium-profile browser fallback for linking upload accounts.
+- `docs/implementation-status.md`: Current implementation snapshot and next work order.

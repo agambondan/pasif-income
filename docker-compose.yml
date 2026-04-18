@@ -36,6 +36,7 @@ services:
 
   app:
     build: .
+    env_file: .env
     environment:
       - VIDEO_URL=${VIDEO_URL}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -46,8 +47,12 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-secretpassword}
       - MINIO_BUCKET=${MINIO_BUCKET:-clips}
       - WHISPER_URL=${WHISPER_URL:-http://whisper:9000/v1/audio/transcriptions}
+      - CHROMIUM_PROFILE_DIR=${CHROMIUM_PROFILE_DIR:-/app/chromium-profiles}
+      - YOUTUBE_ACCESS_TOKEN=${YOUTUBE_ACCESS_TOKEN}
+      - YOUTUBE_PRIVACY_STATUS=${YOUTUBE_PRIVACY_STATUS:-private}
     volumes:
       - ${HOME}/.gemini:/root/.gemini:ro # Mount OAuth credentials as Read-Only
+      - ./chromium-profiles:/app/chromium-profiles
     depends_on:
       - db
       - minio
@@ -59,6 +64,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.clipper
+    env_file: .env
     environment:
       - VIDEO_URL=${VIDEO_URL}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -81,6 +87,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.creator
+    env_file: .env
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_ACCESS_TOKEN=${GEMINI_ACCESS_TOKEN}

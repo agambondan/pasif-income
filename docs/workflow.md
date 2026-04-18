@@ -2,6 +2,13 @@
 
 The system follows an event-driven, staged workflow:
 
+## Current vs Target
+
+- Current code already runs the generation, clipping, persistence, and dashboard control paths.
+- Current distribution is still single-target and storage-oriented.
+- Target distribution is multi-platform and multi-account, driven from API-linked or Chromium-profile-linked destinations.
+- The current implementation snapshot lives in [Implementation Status](./implementation-status.md).
+
 ## 1. Ingestion Stage
 - System takes a video URL (YouTube, etc.).
 - `yt-dlp` downloads the video.

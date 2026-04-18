@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	"github.com/agambondan/pasif-income/internal/core/domain"
 	"github.com/agambondan/pasif-income/internal/core/ports"
 )
 
@@ -21,20 +23,20 @@ func NewGeneratorService(w ports.ScriptWriter, v ports.VoiceGenerator, i ports.I
 	return &GeneratorService{w, v, i, a, u}
 }
 
-func (s *GeneratorService) GenerateContent(ctx context.Context, niche string, topic string) error {
+func (s *GeneratorService) GenerateContent(ctx context.Context, niche string, topic string) (*domain.Story, error) {
 	log.Printf("Starting content generation for Niche: %s, Topic: %s\n", niche, topic)
 
 	// 1. Write Script & Scene Plan
 	story, err := s.writer.WriteScript(ctx, niche, topic)
 	if err != nil {
-		return fmt.Errorf("script writer: %v", err)
+		return nil, fmt.Errorf("script writer: %v", err)
 	}
 	log.Printf("Script generated: %s\n", story.Title)
 
 	// 2. Generate Voiceover
 	voPath, err := s.voice.GenerateVO(ctx, story.Script)
 	if err != nil {
-		return fmt.Errorf("voice generator: %v", err)
+		return nil, fmt.Errorf("voice generator: %v", err)
 	}
 	story.Voiceover = voPath
 	log.Printf("Voiceover generated: %s\n", voPath)
@@ -57,7 +59,7 @@ func (s *GeneratorService) GenerateContent(ctx context.Context, niche string, to
 	// 4. Assemble Video
 	videoPath, err := s.assembler.Assemble(ctx, story)
 	if err != nil {
-		return fmt.Errorf("video assembler: %v", err)
+		return nil, fmt.Errorf("video assembler: %v", err)
 	}
 	story.VideoOutput = videoPath
 	log.Printf("Final video assembled: %s\n", videoPath)
@@ -75,5 +77,5 @@ func (s *GeneratorService) GenerateContent(ctx context.Context, niche string, to
 		os.Remove(file)
 	}
 
-	return nil
+	return story, nil
 }

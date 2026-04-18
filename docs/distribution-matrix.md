@@ -8,6 +8,7 @@ Dokumen ini menjelaskan target distribusi konten untuk `pasif-income` dan bagaim
 - `clipper` sudah bisa memproses video panjang menjadi clip pendek.
 - Pipeline upload masih **single target** per job.
 - Belum ada UI checkbox untuk memilih multiple platform atau multiple account.
+- OAuth connect untuk akun platform masih stub dan belum aman untuk production.
 
 ## Three Draft Tracks
 
@@ -19,7 +20,7 @@ Dokumen ini sekarang menjadi pegangan untuk tiga area kerja berikut:
 
 Satu layer tambahan yang harus disiapkan bersamaan adalah:
 
-- `platform account linking` via OAuth
+- `platform account linking` via API atau Chromium profile
 
 ## Target Model
 
@@ -132,7 +133,7 @@ Dashboard idealnya punya:
 - toggle `publish` per tujuan
 - ringkasan sebelum submit job
 - status koneksi per akun
-- tombol `Connect account` untuk OAuth linking
+- tombol `Connect account` untuk API linking atau Chromium profile linking
 
 Contoh flow:
 
@@ -149,10 +150,10 @@ Dashboard sebaiknya **tidak** minta user memasukkan password platform.
 Model yang disarankan:
 
 1. User klik `Connect account`.
-2. Dashboard redirect ke OAuth resmi platform.
-3. Platform mengembalikan authorization code.
-4. Backend tukar code menjadi access token / refresh token jika tersedia.
-5. Backend simpan token secara aman.
+2. Jika platform punya API yang matang, dashboard pakai OAuth resmi.
+3. Jika platform lebih cocok browser-based, backend buat Chromium profile per email.
+4. User login sekali di profile itu.
+5. Backend simpan profile path dan status koneksi.
 6. Dashboard menampilkan akun yang sudah terhubung sebagai checkbox option.
 
 Kenapa ini lebih baik:
@@ -164,9 +165,9 @@ Kenapa ini lebih baik:
 
 ### Status Per Platform
 
-- YouTube: paling jelas untuk OAuth upload.
-- TikTok: official Content Posting API mendukung direct post setelah user authorisasi app.
-- Instagram: secara praktik biasanya perlu akun profesional dan jalur login/API resmi dari Meta. Implementasi detailnya perlu disesuaikan dengan product dan approval yang tersedia saat itu.
+- YouTube: paling jelas untuk OAuth upload, jadi kandidat API-first terbaik.
+- TikTok: API ada, tapi coverage dan approval bisa lebih ketat, jadi Chromium profile tetap berguna untuk MVP.
+- Instagram: sering lebih sensitif terhadap approval dan jenis akun, jadi browser automation sering lebih praktis untuk tahap awal.
 
 ## Workflow
 
@@ -197,6 +198,10 @@ Urutan yang paling aman:
 4. Tambah upload adapter per platform.
 5. Tambah publish attempt logging.
 6. Baru fan-out upload dari satu job ke banyak destination.
+
+## Status Cross-Reference
+
+Kalau butuh ringkasan real vs mock, lihat [Implementation Status](./implementation-status.md).
 
 ## Related Docs
 

@@ -17,19 +17,25 @@ type Repository interface {
 	UpdateStatus(ctx context.Context, clipID string, status string) error
 	ListClips(ctx context.Context) ([]domain.Clip, error)
 	CreateJob(ctx context.Context, job *domain.GenerationJob) error
+	UpdateJobArtifact(ctx context.Context, jobID string, title string, description string, videoPath string) error
 	UpdateJobStatus(ctx context.Context, jobID string, status string, errMsg string) error
 	GetJob(ctx context.Context, jobID string) (*domain.GenerationJob, error)
 	ListJobs(ctx context.Context) ([]domain.GenerationJob, error)
 	CreateDistributionJob(ctx context.Context, job *domain.DistributionJob) error
+	ListPendingDistributionJobs(ctx context.Context) ([]domain.DistributionJob, error)
 	ListDistributionJobs(ctx context.Context, generationJobID string) ([]domain.DistributionJob, error)
-	UpdateDistributionJobStatus(ctx context.Context, jobID int, status string, externalID string, errMsg string) error
+	UpdateDistributionJobStatus(ctx context.Context, jobID int, status string, statusDetail string, externalID string, errMsg string) error
 
 	// Users & Auth
 	CreateUser(ctx context.Context, username, passwordHash string) error
 	GetUserByUsername(ctx context.Context, username string) (*domain.User, error)
+	CreateSession(ctx context.Context, userID int) (string, error)
+	GetUserBySessionToken(ctx context.Context, sessionToken string) (*domain.User, error)
+	DeleteSession(ctx context.Context, sessionToken string) error
 
 	// Platforms & Accounts
 	ListConnectedAccounts(ctx context.Context, userID int) ([]domain.ConnectedAccount, error)
+	GetConnectedAccountByID(ctx context.Context, accountID string) (*domain.ConnectedAccount, error)
 	SaveConnectedAccount(ctx context.Context, acc *domain.ConnectedAccount) error
 	DeleteConnectedAccount(ctx context.Context, accountID string) error
 }
@@ -53,6 +59,10 @@ type VideoAssembler interface {
 
 type Uploader interface {
 	Upload(ctx context.Context, filePath string, title string, description string) error
+}
+
+type Publisher interface {
+	Publish(ctx context.Context, filePath string, title string, description string, account domain.ConnectedAccount, progress func(string)) (externalID string, err error)
 }
 
 // Clipping Pipeline Ports (Podcast)

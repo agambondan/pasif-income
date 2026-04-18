@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import "./globals.css";
+
+type SessionUser = {
+  username?: string;
+};
 
 export default function RootLayout({
   children,
@@ -11,22 +16,35 @@ export default function RootLayout({
 }>) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    } else if (pathname !== '/login') {
-      router.push('/login');
-    }
-    setIsReady(true);
+    const timer = window.setTimeout(() => {
+      const savedUser = localStorage.getItem('user');
+      if (savedUser) {
+        setUser(JSON.parse(savedUser) as SessionUser);
+      } else if (pathname !== '/login') {
+        router.push('/login');
+      }
+      setIsReady(true);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [pathname, router]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    router.push('/login');
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (err) {
+      console.error('Failed to logout:', err);
+    } finally {
+      localStorage.removeItem('user');
+      router.push('/login');
+    }
   };
 
   if (!isReady) return null;
@@ -51,18 +69,18 @@ export default function RootLayout({
           </div>
           
           <nav className="flex-1 px-4 space-y-1 mt-2">
-            <a href="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+            <Link href="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-transparent'}`}></span>
               Dashboard
-            </a>
-            <a href="/videos" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/videos' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+            </Link>
+            <Link href="/videos" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/videos' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/videos' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-transparent'}`}></span>
               Video Library
-            </a>
-            <a href="/integrations" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/integrations' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+            </Link>
+            <Link href="/integrations" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/integrations' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/integrations' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-transparent'}`}></span>
               Integrations
-            </a>
+            </Link>
           </nav>
 
           <div className="p-6 border-t border-white/5 bg-black/20">
