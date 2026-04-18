@@ -2,6 +2,23 @@ package domain
 
 import "time"
 
+type Destination struct {
+	Platform  string `json:"platform"`
+	AccountID string `json:"account_id"`
+}
+
+type DistributionJob struct {
+	ID              int       `json:"id"`
+	GenerationJobID string    `json:"generation_job_id"`
+	AccountID       string    `json:"account_id"`
+	Platform        string    `json:"platform"`
+	Status          string    `json:"status"`
+	ExternalID      string    `json:"external_id"`
+	Error           string    `json:"error"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
 // GenerationJob represents a persisted generation request and its status.
 type GenerationJob struct {
 	ID          string     `json:"id"`

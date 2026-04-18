@@ -8,9 +8,11 @@ import (
 // Shared Ports
 type Storage interface {
 	Upload(ctx context.Context, filePath string, objectName string) (url string, err error)
+	ListFiles(ctx context.Context, prefix string) ([]string, error)
 }
 
 type Repository interface {
+	// Clips & Jobs
 	SaveClip(ctx context.Context, clip *domain.ClipSegment, sourceID string, s3Path string) error
 	UpdateStatus(ctx context.Context, clipID string, status string) error
 	ListClips(ctx context.Context) ([]domain.Clip, error)
@@ -18,6 +20,18 @@ type Repository interface {
 	UpdateJobStatus(ctx context.Context, jobID string, status string, errMsg string) error
 	GetJob(ctx context.Context, jobID string) (*domain.GenerationJob, error)
 	ListJobs(ctx context.Context) ([]domain.GenerationJob, error)
+	CreateDistributionJob(ctx context.Context, job *domain.DistributionJob) error
+	ListDistributionJobs(ctx context.Context, generationJobID string) ([]domain.DistributionJob, error)
+	UpdateDistributionJobStatus(ctx context.Context, jobID int, status string, externalID string, errMsg string) error
+
+	// Users & Auth
+	CreateUser(ctx context.Context, username, passwordHash string) error
+	GetUserByUsername(ctx context.Context, username string) (*domain.User, error)
+
+	// Platforms & Accounts
+	ListConnectedAccounts(ctx context.Context, userID int) ([]domain.ConnectedAccount, error)
+	SaveConnectedAccount(ctx context.Context, acc *domain.ConnectedAccount) error
+	DeleteConnectedAccount(ctx context.Context, accountID string) error
 }
 
 // Creation Pipeline Ports (Faceless)

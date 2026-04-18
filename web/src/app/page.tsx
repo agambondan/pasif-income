@@ -40,6 +40,20 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState('Never');
   const [niche, setNiche] = useState('stoicism');
   const [topic, setTopic] = useState('how to control your mind');
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+
+  const fetchAccounts = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/accounts`);
+      if (res.ok) {
+        const data = await res.json();
+        setAccounts(data || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch accounts:', err);
+    }
+  }, []);
 
   const fetchClips = useCallback(async () => {
     try {
@@ -81,15 +95,15 @@ export default function Dashboard() {
 
   const refreshAll = useCallback(async () => {
     setLoading(true);
-    await Promise.all([fetchBackendHealth(), fetchClips(), fetchJobs()]);
+    await Promise.all([fetchBackendHealth(), fetchClips(), fetchJobs(), fetchAccounts()]);
     setLoading(false);
     setLastUpdated(new Date().toLocaleString());
-  }, [fetchBackendHealth, fetchClips, fetchJobs]);
+  }, [fetchBackendHealth, fetchClips, fetchJobs, fetchAccounts]);
 
   const pollState = useCallback(async () => {
-    await Promise.all([fetchBackendHealth(), fetchClips(), fetchJobs()]);
+    await Promise.all([fetchBackendHealth(), fetchClips(), fetchJobs(), fetchAccounts()]);
     setLastUpdated(new Date().toLocaleString());
-  }, [fetchBackendHealth, fetchClips, fetchJobs]);
+  }, [fetchBackendHealth, fetchClips, fetchJobs, fetchAccounts]);
 
   useEffect(() => {
     Promise.resolve().then(() => refreshAll());
@@ -117,10 +131,16 @@ export default function Dashboard() {
     try {
       setIsGenerating(true);
       setStatusMessage(null);
+
+      const destinations = selectedAccounts.map(id => {
+        const acc = accounts.find(a => a.id === id);
+        return { platform: acc.platform_id, account_id: id };
+      });
+
       const res = await fetch(`${API_BASE_URL}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ niche, topic }),
+        body: JSON.stringify({ niche, topic, destinations }),
       });
       if (!res.ok) {
         const text = await res.text();
@@ -138,147 +158,181 @@ export default function Dashboard() {
   };
 
   return (
-    <main className="min-h-screen bg-gray-900 text-white p-8">
-      <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-l-4 border-blue-500 pl-6">
         <div>
-          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
-            Podcast Clips Factory
-          </h1>
-          <p className="text-gray-400 mt-2">AI-Generated Viral Content Review Dashboard</p>
+           <h2 className="text-4xl font-black text-white tracking-tighter uppercase">Operations</h2>
+           <p className="text-zinc-500 mt-2 font-medium">Control the AI production pipeline and monitor live jobs.</p>
         </div>
         <div className="flex gap-4">
             <button 
                 onClick={refreshAll}
-                className="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg border border-gray-700 text-sm transition-colors"
+                className="bg-zinc-900 hover:bg-zinc-800 px-6 py-3 rounded-2xl border border-white/5 text-xs font-bold transition-all active:scale-95 shadow-xl"
             >
-                Refresh Queue
+                REFRESH DATA
             </button>
-            <div className={`px-4 py-2 rounded-lg border text-sm font-bold ${backendOnline ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-300'}`}>
-                <span>{backendOnline ? '● Backend Online' : '● Backend Offline'}</span>
-            </div>
-            <div className="bg-gray-800/60 px-4 py-2 rounded-lg border border-gray-700 text-sm text-gray-300">
-                Last updated: <span className="text-white font-semibold">{lastUpdated}</span>
+            <div className={`px-6 py-3 rounded-2xl border text-xs font-black tracking-widest ${backendOnline ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+                {backendOnline ? '● BACKEND ONLINE' : '● BACKEND OFFLINE'}
             </div>
         </div>
-      </header>
+      </div>
 
-      <section className="mb-10 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="rounded-3xl border border-gray-800 bg-gray-900/70 p-6 shadow-2xl shadow-black/20">
-          <p className="text-xs uppercase tracking-[0.3em] text-blue-400 mb-3">Generate</p>
-          <h2 className="text-2xl font-semibold mb-2">Start a new faceless content job</h2>
-          <p className="text-gray-400 mb-5">
-            Trigger the creator pipeline from the dashboard and watch the job status below.
-          </p>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="text-sm text-gray-400">Niche</span>
-              <input
-                value={niche}
-                onChange={(e) => setNiche(e.target.value)}
-                className="mt-2 w-full rounded-xl border border-gray-700 bg-black/30 px-4 py-3 text-white outline-none transition-colors focus:border-emerald-500"
-                placeholder="stoicism"
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm text-gray-400">Topic</span>
-              <input
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                className="mt-2 w-full rounded-xl border border-gray-700 bg-black/30 px-4 py-3 text-white outline-none transition-colors focus:border-emerald-500"
-                placeholder="how to control your mind"
-              />
-            </label>
-          </div>
-          <div className="mt-5 flex flex-wrap gap-3">
+      <section className="grid gap-8 lg:grid-cols-[1.4fr_0.6fr]">
+        <div className="bg-card border border-white/5 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden group">
+          <div className="absolute -top-24 -right-24 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl group-hover:bg-blue-500/10 transition-colors"></div>
+          
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-8">
+               <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center text-xl shadow-lg border border-blue-500/30 text-blue-400">⚡</div>
+               <h3 className="text-2xl font-bold text-white uppercase tracking-tight">New Production Job</h3>
+            </div>
+            
+            <div className="grid gap-6 md:grid-cols-2 mb-8">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">Niche Architecture</label>
+                <input
+                  value={niche}
+                  onChange={(e) => setNiche(e.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-4 text-white font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                  placeholder="stoicism"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">Content Concept</label>
+                <input
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-4 text-white font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                  placeholder="how to control your mind"
+                />
+              </div>
+            </div>
+
+            {accounts.length > 0 && (
+              <div className="mb-10">
+                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1 block mb-4 text-center">Distribution Matrix</span>
+                <div className="flex flex-wrap justify-center gap-3">
+                  {accounts.map(acc => (
+                    <label key={acc.id} className={`flex items-center gap-3 border px-5 py-3 rounded-2xl cursor-pointer transition-all duration-300 ${selectedAccounts.includes(acc.id) ? 'bg-emerald-500/10 border-emerald-500/50 shadow-lg shadow-emerald-500/5' : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-black/60'}`}>
+                      <input 
+                        type="checkbox" 
+                        className="hidden"
+                        checked={selectedAccounts.includes(acc.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedAccounts([...selectedAccounts, acc.id]);
+                          else setSelectedAccounts(selectedAccounts.filter(id => id !== acc.id));
+                        }}
+                      />
+                      <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${selectedAccounts.includes(acc.id) ? 'bg-emerald-500 border-emerald-500 rotate-0' : 'border-zinc-700 rotate-45'}`}>
+                        {selectedAccounts.includes(acc.id) && <span className="text-black text-xs font-black">✓</span>}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-white">{acc.display_name}</span>
+                        <span className="text-[9px] text-zinc-500 font-black uppercase tracking-widest">{acc.platform_id}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button
               onClick={startGeneration}
               disabled={isGenerating}
-              className="rounded-xl bg-emerald-600 px-5 py-3 font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-900/40"
+              className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 py-5 font-black text-white text-sm uppercase tracking-[0.2em] transition-all hover:from-blue-500 hover:to-blue-400 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-blue-900/20 flex items-center justify-center gap-3"
             >
-              {isGenerating ? 'Starting...' : 'Start Generation'}
+              {isGenerating ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white"></div>
+                  INITIALIZING...
+                </>
+              ) : 'EXECUTE PRODUCTION'}
             </button>
-            <button
-              onClick={refreshAll}
-              className="rounded-xl border border-gray-700 bg-gray-800 px-5 py-3 font-semibold text-white transition-colors hover:bg-gray-700"
-            >
-              Refresh State
-            </button>
+            
+            {statusMessage && (
+              <div className="mt-6 rounded-2xl border border-blue-500/20 bg-blue-500/10 px-6 py-4 text-xs font-bold text-blue-400 text-center animate-bounce">
+                {statusMessage}
+              </div>
+            )}
           </div>
-          {statusMessage ? (
-            <div className="mt-4 rounded-xl border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-200">
-              {statusMessage}
-            </div>
-          ) : null}
         </div>
 
-        <div className="rounded-3xl border border-gray-800 bg-gray-900/70 p-6">
-          <p className="text-xs uppercase tracking-[0.3em] text-emerald-400 mb-3">Jobs</p>
-          <h2 className="text-2xl font-semibold mb-4">Recent generation jobs</h2>
-          <div className="space-y-3">
+        <div className="bg-card border border-white/5 rounded-[2.5rem] p-8 shadow-2xl flex flex-col">
+          <div className="flex items-center gap-3 mb-8">
+             <div className="w-10 h-10 bg-emerald-500/20 rounded-xl flex items-center justify-center text-xl shadow-lg border border-emerald-500/30 text-emerald-400">📊</div>
+             <h3 className="text-2xl font-bold text-white uppercase tracking-tight">Active Jobs</h3>
+          </div>
+          
+          <div className="space-y-4 flex-1 overflow-auto max-h-[500px] pr-2">
             {jobs && jobs.length > 0 ? jobs.map((job) => (
-              <div key={job.id} className="rounded-2xl border border-gray-800 bg-black/20 p-4">
-                <div className="flex items-center justify-between gap-4">
+              <div key={job.id} className="rounded-2xl border border-white/5 bg-black/40 p-5 hover:border-white/20 transition-all group/job">
+                <div className="flex items-start justify-between gap-4 mb-3">
                   <div>
-                    <p className="font-semibold">{job.niche}</p>
-                    <p className="text-sm text-gray-400 line-clamp-1">{job.topic}</p>
+                    <p className="font-black text-white text-sm group-hover:text-blue-400 transition-colors uppercase tracking-tight">{job.niche}</p>
+                    <p className="text-xs text-zinc-500 font-medium line-clamp-1 mt-1 uppercase tracking-widest">{job.topic}</p>
                   </div>
-                  <span className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] ${jobStatusStyles[job.status]}`}>
+                  <span className={`rounded-lg border px-2 py-1 text-[9px] font-black uppercase tracking-widest shadow-sm ${jobStatusStyles[job.status]}`}>
                     {job.status}
                   </span>
                 </div>
-                <p className="mt-2 text-xs text-gray-500">
-                  Created {formatTime(job.created_at)}
-                </p>
-                <p className="text-xs text-gray-500">
-                  Updated {formatTime(job.updated_at)}
-                </p>
-                {job.error ? <p className="mt-2 text-sm text-red-300">{job.error}</p> : null}
+                <div className="flex flex-col gap-1">
+                    <p className="text-[10px] text-zinc-600 font-bold uppercase tracking-tighter">
+                    {formatTime(job.created_at)}
+                    </p>
+                    {job.error && <p className="mt-2 text-[10px] font-bold text-red-500 bg-red-500/5 p-2 rounded-lg border border-red-500/10">{job.error}</p>}
+                </div>
               </div>
             )) : (
-              <div className="rounded-2xl border border-dashed border-gray-800 bg-black/10 p-6 text-sm text-gray-500">
-                No generation jobs yet.
+              <div className="h-full flex flex-col items-center justify-center text-center py-10 opacity-50 grayscale">
+                <div className="text-4xl mb-4">💤</div>
+                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Queue Empty</p>
               </div>
             )}
           </div>
         </div>
       </section>
 
+      <div className="border-l-4 border-emerald-500 pl-6">
+        <h2 className="text-4xl font-black text-white tracking-tighter uppercase font-mono">READY FOR REVIEW</h2>
+        <p className="text-zinc-500 mt-2 font-medium">Verify AI outputs before final distribution.</p>
+      </div>
+
       {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <div className="flex justify-center py-32">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)]"></div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
           {clips && clips.length > 0 ? (
             clips.map((clip) => (
-              <div key={clip.id} className="bg-gray-800 rounded-2xl overflow-hidden border border-gray-700 shadow-2xl flex flex-col transition-all hover:border-gray-500">
-                {/* Real Video Player */}
-                <div className="aspect-[9/16] bg-black relative group">
+              <div key={clip.id} className="bg-card rounded-[2rem] overflow-hidden border border-white/5 shadow-2xl flex flex-col transition-all duration-500 hover:border-emerald-500/50 hover:-translate-y-2 group/card">
+                <div className="aspect-[9/16] bg-black relative overflow-hidden">
                   <video 
                     src={clip.s3_path} 
                     controls 
-                    className="w-full h-full object-contain"
-                    poster="/video-poster.png" // Fallback poster
+                    className="w-full h-full object-contain relative z-10"
                   />
                   
                   {/* Floating Viral Score */}
-                  <div className="absolute top-4 right-4 z-10 bg-black/60 backdrop-blur-md text-emerald-400 px-3 py-1.5 rounded-full text-xs font-black border border-emerald-500/30">
-                    🔥 {clip.viral_score}% VIRAL
+                  <div className="absolute top-4 right-4 z-20 bg-black/80 backdrop-blur-xl text-emerald-400 px-4 py-2 rounded-2xl text-[10px] font-black border border-emerald-500/30 shadow-2xl tracking-[0.1em]">
+                    V-SCORE {clip.viral_score}%
                   </div>
                 </div>
 
-                <div className="p-5 flex-1 flex flex-col">
-                  <h3 className="text-lg font-bold mb-1 line-clamp-2 leading-tight h-12">{clip.headline}</h3>
-                  <p className="text-xs text-gray-500 mb-4 font-mono uppercase tracking-widest">
-                    TS: {clip.start_time} - {clip.end_time}
-                  </p>
+                <div className="p-6 flex-1 flex flex-col">
+                  <h3 className="text-lg font-black text-white mb-2 line-clamp-2 leading-tight uppercase group-hover/card:text-emerald-400 transition-colors">{clip.headline}</h3>
+                  <div className="flex items-center gap-2 mb-6">
+                    <span className="text-[9px] font-mono font-bold text-zinc-600 bg-black/40 px-2 py-1 rounded-md border border-white/5 uppercase tracking-tighter">
+                        TC {clip.start_time} - {clip.end_time}
+                    </span>
+                  </div>
                   
-                  <div className="mt-auto space-y-3">
-                    <div className="flex items-center justify-between text-xs px-1">
-                        <span className="text-gray-400 italic">Current Status:</span>
-                        <span className={`font-bold px-2 py-0.5 rounded ${
-                            clip.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400' : 
-                            clip.status === 'rejected' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'
+                  <div className="mt-auto space-y-4">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">STATUS</span>
+                        <span className={`text-[10px] font-black px-3 py-1 rounded-full border shadow-sm tracking-[0.1em] ${
+                            clip.status === 'approved' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 
+                            clip.status === 'rejected' ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
                         }`}>
                             {(clip.status || 'pending').toUpperCase()}
                         </span>
@@ -288,10 +342,10 @@ export default function Dashboard() {
                         <button 
                         onClick={() => updateStatus(clip.id, 'approved')}
                         disabled={clip.status === 'approved'}
-                        className={`font-bold py-2.5 rounded-xl transition-all ${
+                        className={`font-black text-[11px] uppercase tracking-widest py-3.5 rounded-xl transition-all ${
                             clip.status === 'approved' 
-                            ? 'bg-emerald-900/20 text-emerald-700 cursor-not-allowed' 
-                            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20'
+                            ? 'bg-zinc-900 text-zinc-700 cursor-not-allowed border border-white/5' 
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20 active:scale-95'
                         }`}
                         >
                         Approve
@@ -299,10 +353,10 @@ export default function Dashboard() {
                         <button 
                         onClick={() => updateStatus(clip.id, 'rejected')}
                         disabled={clip.status === 'rejected'}
-                        className={`font-bold py-2.5 rounded-xl transition-all border ${
+                        className={`font-black text-[11px] uppercase tracking-widest py-3.5 rounded-xl transition-all border ${
                             clip.status === 'rejected'
-                            ? 'bg-red-900/10 text-red-900 border-red-900/20 cursor-not-allowed'
-                            : 'bg-gray-700 hover:bg-red-900/40 hover:text-red-400 text-white border-gray-600'
+                            ? 'bg-zinc-900 text-zinc-700 border-white/5 cursor-not-allowed'
+                            : 'bg-zinc-800 hover:bg-red-900/20 hover:text-red-400 text-white border-white/5 active:scale-95'
                         }`}
                         >
                         Reject
@@ -313,14 +367,14 @@ export default function Dashboard() {
               </div>
             ))
           ) : (
-            <div className="col-span-full text-center py-32 bg-gray-800/30 rounded-3xl border-2 border-dashed border-gray-800">
-              <div className="text-6xl mb-4">🎬</div>
-              <p className="text-gray-500 text-xl font-medium">No clips found in the queue.</p>
-              <p className="text-gray-600 mt-1">Start the Go pipeline to generate viral content.</p>
+            <div className="col-span-full text-center py-40 bg-card rounded-[3rem] border-2 border-dashed border-white/5">
+              <div className="text-7xl mb-6 opacity-30 grayscale">🎬</div>
+              <p className="text-zinc-500 text-xl font-black uppercase tracking-[0.2em]">Depleted Queue</p>
+              <p className="text-zinc-600 mt-2 font-medium">Initiate pipeline to generate new content.</p>
             </div>
           )}
         </div>
       )}
-    </main>
+    </div>
   );
 }

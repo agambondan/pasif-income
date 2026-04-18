@@ -59,3 +59,18 @@ func (s *MinIOStorage) Upload(ctx context.Context, filePath, objectName string) 
 
 	return presignedURL.String(), nil
 }
+
+func (s *MinIOStorage) ListFiles(ctx context.Context, prefix string) ([]string, error) {
+	var files []string
+	objectCh := s.client.ListObjects(ctx, s.bucketName, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	})
+	for object := range objectCh {
+		if object.Err != nil {
+			return nil, object.Err
+		}
+		files = append(files, object.Key)
+	}
+	return files, nil
+}

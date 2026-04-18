@@ -19,13 +19,17 @@ import (
 )
 
 type generateRequest struct {
-	Niche string `json:"niche"`
-	Topic string `json:"topic"`
+	Niche        string               `json:"niche"`
+	Topic        string               `json:"topic"`
+	Destinations []domain.Destination `json:"destinations"`
 }
 
 type apiServer struct {
 	repo      ports.Repository
+	storage   ports.Storage
 	generator *services.GeneratorService
+	auth      *services.AuthService
+	platform  *services.PlatformService
 }
 
 func main() {
@@ -38,13 +42,32 @@ func main() {
 		repo = dbRepo
 	}
 
+	storage, err := adapters.NewMinIOStorage(minioEndpoint(), minioAccessKey(), minioSecretKey(), minioBucket())
+	if err != nil {
+		log.Printf("MinIO Warning: %v\n", err)
+	}
+
 	api := &apiServer{
 		repo:      repo,
+		storage:   storage,
 		generator: newGeneratorServiceFromEnv(),
+		auth:      services.NewAuthService(repo),
+		platform:  services.NewPlatformService(repo),
+	}
+
+	// Create default user for testing
+	if repo != nil {
+		_ = api.auth.Register(context.Background(), "admin", "admin123")
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", api.healthHandler)
+	mux.HandleFunc("/api/auth/login", api.loginHandler)
+	mux.HandleFunc("/api/platforms", api.platformsHandler)
+	mux.HandleFunc("/api/accounts", api.accountsHandler)
+	mux.HandleFunc("/api/accounts/", api.deleteAccountHandler)
+	mux.HandleFunc("/api/auth/", api.oauthHandler)
+	mux.HandleFunc("/api/videos", api.videosHandler)
 	mux.HandleFunc("/api/clips", api.clipsHandler)
 	mux.HandleFunc("/api/generate", api.generateHandler)
 	mux.HandleFunc("/api/jobs", api.jobsHandler)
@@ -56,6 +79,142 @@ func main() {
 	if err := http.ListenAndServe(":8080", handler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+func minioEndpoint() string {
+	if e := os.Getenv("MINIO_ENDPOINT"); e != "" {
+		return e
+	}
+	return "localhost:9002"
+}
+
+func minioAccessKey() string {
+	if k := os.Getenv("MINIO_ACCESS_KEY"); k != "" {
+		return k
+	}
+	return "admin"
+}
+
+func minioSecretKey() string {
+	if s := os.Getenv("MINIO_SECRET_KEY"); s != "" {
+		return s
+	}
+	return "secretpassword"
+}
+
+func minioBucket() string {
+	if b := os.Getenv("MINIO_BUCKET"); b != "" {
+		return b
+	}
+	return "clips"
+}
+
+func (a *apiServer) loginHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	user, err := a.auth.Login(r.Context(), req.Username, req.Password)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, user)
+}
+
+func (a *apiServer) platformsHandler(w http.ResponseWriter, r *http.Request) {
+	platforms := a.platform.GetSupportedPlatforms()
+	writeJSON(w, http.StatusOK, platforms)
+}
+
+func (a *apiServer) accountsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	// Stubbing user_id=1 for now as there's no session middleware yet.
+	accounts, err := a.repo.ListConnectedAccounts(r.Context(), 1)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, accounts)
+}
+
+func (a *apiServer) deleteAccountHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if err := a.repo.DeleteConnectedAccount(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *apiServer) oauthHandler(w http.ResponseWriter, r *http.Request) {
+	// Simple stub for OAuth flow
+	// /api/auth/{platform} -> redirect to provider (mock)
+	// /api/auth/{platform}/callback -> save token
+	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/auth/"), "/")
+	if len(pathParts) == 0 || pathParts[0] == "" {
+		http.NotFound(w, r)
+		return
+	}
+	platform := pathParts[0]
+
+	if len(pathParts) > 1 && pathParts[1] == "callback" {
+		// Mock callback: just save a dummy connected account
+		acc := &domain.ConnectedAccount{
+			ID:          platform + "-test-" + makeJobID()[:8],
+			UserID:      1,
+			PlatformID:  platform,
+			DisplayName: "Test " + strings.ToUpper(platform) + " Account",
+			AccessToken: "dummy-token",
+			Expiry:      time.Now().Add(365 * 24 * time.Hour),
+			CreatedAt:   time.Now(),
+		}
+		if err := a.repo.SaveConnectedAccount(r.Context(), acc); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Redirect back to frontend integrations page
+		http.Redirect(w, r, "http://localhost:13100/integrations", http.StatusFound)
+		return
+	}
+
+	// Mock redirect
+	http.Redirect(w, r, "/api/auth/"+platform+"/callback?code=mock", http.StatusFound)
+}
+
+func (a *apiServer) videosHandler(w http.ResponseWriter, r *http.Request) {
+	if a.storage == nil {
+		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	files, err := a.storage.ListFiles(r.Context(), "")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, files)
 }
 
 func newGeneratorServiceFromEnv() *services.GeneratorService {
@@ -193,7 +352,7 @@ func (a *apiServer) generateHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		go a.runGeneration(job.ID, niche, topic)
+		go a.runGeneration(job.ID, niche, topic, req.Destinations)
 
 		writeJSON(w, http.StatusAccepted, job)
 	default:
@@ -298,7 +457,7 @@ func (a *apiServer) updateJobStatusHandler(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, job)
 }
 
-func (a *apiServer) runGeneration(jobID, niche, topic string) {
+func (a *apiServer) runGeneration(jobID, niche, topic string, destinations []domain.Destination) {
 	if a.repo != nil {
 		if err := a.repo.UpdateJobStatus(context.Background(), jobID, "running", ""); err != nil {
 			log.Printf("failed to mark job running: %v\n", err)
@@ -322,7 +481,22 @@ func (a *apiServer) runGeneration(jobID, niche, topic string) {
 		return
 	}
 
+	// Create distribution jobs if successful
 	if a.repo != nil {
+		for _, dest := range destinations {
+			distJob := domain.DistributionJob{
+				GenerationJobID: jobID,
+				AccountID:       dest.AccountID,
+				Platform:        dest.Platform,
+				Status:          "pending",
+				CreatedAt:       time.Now(),
+				UpdatedAt:       time.Now(),
+			}
+			if err := a.repo.CreateDistributionJob(ctx, &distJob); err != nil {
+				log.Printf("failed to create distribution job for %s: %v\n", dest.Platform, err)
+			}
+		}
+
 		if err := a.repo.UpdateJobStatus(ctx, jobID, "completed", ""); err != nil {
 			log.Printf("failed to mark job completed: %v\n", err)
 		}
