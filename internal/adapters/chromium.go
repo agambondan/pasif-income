@@ -145,7 +145,7 @@ func (r *ChromiumRunner) AutomateUpload(ctx context.Context, profilePath, target
 		progress("opening_upload_flow")
 	}
 	if err = clickFirstTextMatch(runCtx, uploadActionTerms(platformID)); err != nil {
-		log.Printf("chromium upload: upload action not found for %s: %v\n", platformID, err)
+		return fmt.Errorf("upload action not found for %s: %w", platformID, err)
 	}
 
 	stage = "attach_file"
@@ -168,7 +168,7 @@ func (r *ChromiumRunner) AutomateUpload(ctx context.Context, profilePath, target
 		progress("publishing")
 	}
 	if err = clickFirstTextMatch(runCtx, publishActionTerms(platformID)); err != nil {
-		log.Printf("chromium upload: publish action not found for %s: %v\n", platformID, err)
+		return fmt.Errorf("publish action not found for %s: %w", platformID, err)
 	}
 
 	if progress != nil {
@@ -357,11 +357,16 @@ func clickFirstTextMatch(ctx context.Context, terms []string) error {
 func uploadActionTerms(platformID string) []string {
 	switch platformID {
 	case "youtube":
-		return []string{"Create", "Upload videos", "Select files"}
+		return []string{
+			"Create",
+			"Upload videos",
+			"Select files",
+			"Upload",
+		}
 	case "tiktok":
-		return []string{"Upload", "Select file", "Choose file"}
+		return []string{"Upload", "Select file", "Choose file", "Post"}
 	case "instagram":
-		return []string{"New post", "Select from computer", "Choose from computer"}
+		return []string{"New post", "Select from computer", "Choose from computer", "Create new"}
 	default:
 		return []string{"Upload", "Select file"}
 	}
@@ -370,11 +375,11 @@ func uploadActionTerms(platformID string) []string {
 func publishActionTerms(platformID string) []string {
 	switch platformID {
 	case "youtube":
-		return []string{"Publish", "Done"}
+		return []string{"Publish", "Done", "Next"}
 	case "tiktok":
-		return []string{"Post", "Publish"}
+		return []string{"Post", "Publish", "Continue"}
 	case "instagram":
-		return []string{"Share", "Publish"}
+		return []string{"Share", "Publish", "Next"}
 	default:
 		return []string{"Publish", "Share", "Post"}
 	}
