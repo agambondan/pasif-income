@@ -76,7 +76,6 @@ services:
       - BROWSER_PROFILES_DIR=/data/browser_profiles
     volumes:
       - ${HOME}/.codex:/root/.codex
-      - .:/app
       - ${HOME}/.gemini:/root/.gemini:ro
       - browser_data:/data/browser_profiles
     depends_on:
