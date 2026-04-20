@@ -159,6 +159,14 @@ export default function VideoLibrary() {
     return buildTrendSeries(metricsHistory, (item) => item.niche || item.platform || 'unknown').slice(0, 3);
   }, [metricsHistory]);
 
+  const platformTrendSeries = useMemo(() => {
+    return buildTrendSeries(metricsHistory, (item) => item.platform || 'unknown').slice(0, 3);
+  }, [metricsHistory]);
+
+  const accountTrendSeries = useMemo(() => {
+    return buildTrendSeries(metricsHistory, (item) => item.account_id || 'unknown').slice(0, 3);
+  }, [metricsHistory]);
+
   const videoTrendSeries = useMemo(() => {
     return buildTrendSeries(metricsHistory, (item) => item.video_title || item.external_id || 'unknown').slice(0, 3);
   }, [metricsHistory]);
@@ -314,6 +322,62 @@ export default function VideoLibrary() {
             ) : (
               <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
                 <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No video trend data yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-8 lg:grid-cols-2">
+        <div className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl">
+          <div className="mb-6">
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Growth Chart</p>
+            <h3 className="text-2xl font-black text-white uppercase tracking-tight">Views by Platform</h3>
+          </div>
+          <div className="space-y-5">
+            {platformTrendSeries.length > 0 ? (
+              platformTrendSeries.map((series) => (
+                <div key={series.label} className="rounded-2xl border border-white/5 bg-black/40 p-4">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div>
+                      <p className="text-sm font-black text-white uppercase tracking-tight">{series.label}</p>
+                      <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">{formatNumber(series.total)} total views</p>
+                    </div>
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: series.color }} />
+                  </div>
+                  <Sparkline points={series.points} color={series.color} />
+                </div>
+              ))
+            ) : (
+              <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No platform trend data yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl">
+          <div className="mb-6">
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Growth Chart</p>
+            <h3 className="text-2xl font-black text-white uppercase tracking-tight">Views by Account</h3>
+          </div>
+          <div className="space-y-5">
+            {accountTrendSeries.length > 0 ? (
+              accountTrendSeries.map((series) => (
+                <div key={series.label} className="rounded-2xl border border-white/5 bg-black/40 p-4">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div>
+                      <p className="text-sm font-black text-white uppercase tracking-tight line-clamp-1">{series.label}</p>
+                      <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">{formatNumber(series.total)} total views</p>
+                    </div>
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: series.color }} />
+                  </div>
+                  <Sparkline points={series.points} color={series.color} />
+                </div>
+              ))
+            ) : (
+              <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No account trend data yet</p>
               </div>
             )}
           </div>

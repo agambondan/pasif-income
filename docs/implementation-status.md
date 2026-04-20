@@ -36,6 +36,7 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 - Chromium profile provisioning sudah aktif per platform/email.
 - Distribution worker sudah memproses pending `distribution_jobs`.
 - Metrics worker sudah melakukan sync snapshot metrik YouTube ke Postgres.
+- Dashboard analytics sudah menampilkan growth by niche, video, platform, dan akun.
 - Publisher adapter sudah punya:
   - YouTube API path
   - Chromium profile fallback
@@ -52,13 +53,13 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 - retry/failover per destination
 - platform-specific upload adapter yang benar-benar real
 - Chromium browser automation yang benar-benar menekan UI platform
-- chart growth analytics per niche atau per video
+- alert kalau performa drop tajam
 
 ## Recommended Next Order
 
 1. Retry/failover per destination.
 2. Real browser automation per platform.
-3. Chart growth analytics per niche atau per video.
+3. Alert kalau performa drop tajam.
 4. UI checkbox platform dan account yang sudah connected.
 5. Smart scheduling untuk drip feed upload.
 

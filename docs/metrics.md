@@ -18,6 +18,7 @@ MVP analytics sekarang fokus ke YouTube API:
 - backend menyimpan snapshot metrik video ke Postgres
 - snapshot diambil dari YouTube Data API untuk video yang sudah ter-publish
 - dashboard menampilkan ringkasan views, likes, comments, dan histori snapshot
+- dashboard juga menampilkan growth by niche, video, platform, dan account
 - worker background melakukan sync periodik
 - endpoint manual tersedia untuk memaksa refresh
 
@@ -34,6 +35,7 @@ Field penting:
 - `distribution_job_id`
 - `account_id`
 - `platform`
+- `niche`
 - `external_id`
 - `video_title`
 - `view_count`
@@ -73,7 +75,6 @@ Halaman `videos` sekarang menampilkan:
 
 Setelah ini, ekstensi paling bernilai adalah:
 
-- chart growth per video atau per niche
-- scheduled sync yang lebih cerdas per platform
 - alert kalau performa drop tajam
-- grouping metrics per niche, bukan hanya per video
+- scheduled sync yang lebih cerdas per platform
+- comparison view between accounts with same platform
