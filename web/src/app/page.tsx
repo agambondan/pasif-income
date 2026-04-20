@@ -36,6 +36,33 @@ type DistributionJob = {
   updated_at: string;
 };
 
+type TrendSignal = {
+  query: string;
+  source: string;
+  score: number;
+  link?: string;
+  context?: string;
+};
+
+type IdeaSuggestion = {
+  title: string;
+  hook: string;
+  angle: string;
+  search_query: string;
+  trend_source: string;
+  score: number;
+  reason: string;
+};
+
+type TrendResearchResult = {
+  niche: string;
+  seed: string;
+  signals: TrendSignal[];
+  ideas: IdeaSuggestion[];
+  warnings?: string[];
+  collected_at: string;
+};
+
 const API_BASE_URL = '';
 
 const jobStatusStyles: Record<GenerationJob['status'], string> = {
@@ -72,6 +99,9 @@ export default function Dashboard() {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [distributionJobs, setDistributionJobs] = useState<DistributionJob[]>([]);
+  const [ideaSuggestions, setIdeaSuggestions] = useState<IdeaSuggestion[]>([]);
+  const [ideaWarnings, setIdeaWarnings] = useState<string[]>([]);
+  const [isResearching, setIsResearching] = useState(false);
   const selectedJobIdRef = useRef('');
 
   const fetchAccounts = useCallback(async () => {
@@ -194,6 +224,34 @@ export default function Dashboard() {
     }
   };
 
+  const researchIdeas = async () => {
+    try {
+      setIsResearching(true);
+      setStatusMessage(null);
+      const res = await fetch(`${API_BASE_URL}/api/research/ideas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ niche, limit: 5 }),
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      const result = (await res.json()) as TrendResearchResult;
+      setIdeaSuggestions(result.ideas || []);
+      setIdeaWarnings(result.warnings || []);
+      if (result.ideas?.[0]?.search_query) {
+        setTopic(result.ideas[0].search_query);
+      }
+      setStatusMessage(`Found ${result.ideas?.length || 0} topic ideas for ${result.niche}`);
+    } catch (err) {
+      console.error('Failed to research ideas:', err);
+      setStatusMessage(err instanceof Error ? err.message : 'Failed to research ideas');
+    } finally {
+      setIsResearching(false);
+    }
+  };
+
   const startGeneration = async () => {
     try {
       setIsGenerating(true);
@@ -311,6 +369,62 @@ export default function Dashboard() {
                   placeholder="1"
                 />
               </div>
+            </div>
+
+            <div className="mb-8 rounded-3xl border border-white/5 bg-black/30 p-5">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Trend Research</p>
+                  <h4 className="text-lg font-black text-white uppercase tracking-tight">Discover topic ideas from live signals</h4>
+                </div>
+                <button
+                  onClick={researchIdeas}
+                  disabled={isResearching}
+                  className="rounded-2xl bg-fuchsia-500/10 border border-fuchsia-500/20 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-fuchsia-300 transition-all hover:bg-fuchsia-500/20 active:scale-95 disabled:opacity-50"
+                >
+                  {isResearching ? 'RESEARCHING...' : 'DISCOVER IDEAS'}
+                </button>
+              </div>
+
+              {ideaWarnings.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {ideaWarnings.slice(0, 3).map((warning) => (
+                    <span key={warning} className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                      {warning}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {ideaSuggestions.length > 0 ? (
+                <div className="mt-5 grid gap-3">
+                  {ideaSuggestions.map((idea) => (
+                    <button
+                      key={`${idea.title}-${idea.search_query}`}
+                      onClick={() => setTopic(idea.search_query)}
+                      className="text-left rounded-2xl border border-white/5 bg-black/40 p-4 transition-all hover:border-fuchsia-500/30 hover:bg-black/60 active:scale-[0.99]"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-black text-white uppercase tracking-tight">{idea.title}</p>
+                          <p className="mt-1 text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+                            {idea.trend_source} · score {idea.score}
+                          </p>
+                        </div>
+                        <span className="rounded-lg border border-fuchsia-500/20 bg-fuchsia-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-fuchsia-300">
+                          Use
+                        </span>
+                      </div>
+                      <p className="mt-3 text-xs text-zinc-300">{idea.hook}</p>
+                      <p className="mt-2 text-[11px] text-zinc-500">{idea.angle}</p>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-5 rounded-2xl border border-dashed border-white/5 py-10 text-center">
+                  <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No ideas yet</p>
+                </div>
+              )}
             </div>
 
             {accounts.length > 0 && (

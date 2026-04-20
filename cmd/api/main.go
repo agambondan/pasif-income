@@ -39,6 +39,7 @@ type apiServer struct {
 	auth      *services.AuthService
 	platform  *services.PlatformService
 	metrics   *services.MetricsService
+	research  *services.TrendResearchService
 }
 
 func main() {
@@ -62,6 +63,7 @@ func main() {
 		auth:     services.NewAuthService(repo),
 		platform: services.NewPlatformService(repo),
 		metrics:  services.NewMetricsService(repo),
+		research: services.NewTrendResearchService(),
 	}
 
 	generator, err := newGeneratorServiceFromEnv()
@@ -99,6 +101,7 @@ func main() {
 	mux.HandleFunc("/api/videos", api.videosHandler)
 	mux.HandleFunc("/api/metrics", api.metricsHandler)
 	mux.HandleFunc("/api/metrics/sync", api.metricsSyncHandler)
+	mux.HandleFunc("/api/research/ideas", api.researchIdeasHandler)
 	mux.HandleFunc("/api/clips", api.clipsHandler)
 	mux.HandleFunc("/api/generate", api.generateHandler)
 	mux.HandleFunc("/api/publish/history", api.publishHistoryHandler)
@@ -555,6 +558,11 @@ type metricsResponse struct {
 	History []domain.VideoMetricSnapshot `json:"history"`
 }
 
+type researchRequest struct {
+	Niche string `json:"niche"`
+	Limit int    `json:"limit"`
+}
+
 func (a *apiServer) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	if a.repo == nil {
 		http.Error(w, "repository unavailable", http.StatusServiceUnavailable)
@@ -611,6 +619,36 @@ func (a *apiServer) metricsSyncHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"synced": synced,
 	})
+}
+
+func (a *apiServer) researchIdeasHandler(w http.ResponseWriter, r *http.Request) {
+	if a.research == nil {
+		http.Error(w, "research unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	if _, err := a.currentUserID(r); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	var req researchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	result, err := a.research.Research(r.Context(), strings.TrimSpace(req.Niche), req.Limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func collapseLatestMetricSnapshots(history []domain.VideoMetricSnapshot) []domain.VideoMetricSnapshot {
