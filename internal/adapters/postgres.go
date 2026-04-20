@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agambondan/pasif-income/internal/core/domain"
+	"github.com/agambondan/pasif-income/internal/pkg/crypto"
 	_ "github.com/lib/pq"
 )
 
@@ -201,7 +202,7 @@ func (r *PostgresRepository) DeleteSession(ctx context.Context, sessionToken str
 
 func (r *PostgresRepository) ListConnectedAccounts(ctx context.Context, userID int) ([]domain.ConnectedAccount, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, user_id, platform_id, display_name, auth_method, COALESCE(email, ''), COALESCE(profile_path, ''), COALESCE(access_token, ''), expiry, created_at 
+		SELECT id, user_id, platform_id, display_name, auth_method, COALESCE(email, ''), COALESCE(profile_path, ''), COALESCE(access_token, ''), COALESCE(refresh_token, ''), expiry, created_at
 		FROM connected_accounts WHERE user_id = $1
 	`, userID)
 	if err != nil {
@@ -212,9 +213,18 @@ func (r *PostgresRepository) ListConnectedAccounts(ctx context.Context, userID i
 	var accs []domain.ConnectedAccount
 	for rows.Next() {
 		var a domain.ConnectedAccount
-		if err := rows.Scan(&a.ID, &a.UserID, &a.PlatformID, &a.DisplayName, &a.AuthMethod, &a.Email, &a.ProfilePath, &a.AccessToken, &a.Expiry, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.UserID, &a.PlatformID, &a.DisplayName, &a.AuthMethod, &a.Email, &a.ProfilePath, &a.AccessToken, &a.RefreshToken, &a.Expiry, &a.CreatedAt); err != nil {
 			return nil, err
 		}
+
+		// Decrypt tokens
+		if decryptedAt, err := crypto.Decrypt(a.AccessToken); err == nil {
+			a.AccessToken = decryptedAt
+		}
+		if decryptedRt, err := crypto.Decrypt(a.RefreshToken); err == nil {
+			a.RefreshToken = decryptedRt
+		}
+
 		accs = append(accs, a)
 	}
 	return accs, nil
@@ -223,28 +233,48 @@ func (r *PostgresRepository) ListConnectedAccounts(ctx context.Context, userID i
 func (r *PostgresRepository) GetConnectedAccountByID(ctx context.Context, accountID string) (*domain.ConnectedAccount, error) {
 	var a domain.ConnectedAccount
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, user_id, platform_id, display_name, auth_method, COALESCE(email, ''), COALESCE(profile_path, ''), COALESCE(access_token, ''), expiry, created_at
+		SELECT id, user_id, platform_id, display_name, auth_method, COALESCE(email, ''), COALESCE(profile_path, ''), COALESCE(access_token, ''), COALESCE(refresh_token, ''), expiry, created_at
 		FROM connected_accounts
 		WHERE id = $1
-	`, accountID).Scan(&a.ID, &a.UserID, &a.PlatformID, &a.DisplayName, &a.AuthMethod, &a.Email, &a.ProfilePath, &a.AccessToken, &a.Expiry, &a.CreatedAt)
+	`, accountID).Scan(&a.ID, &a.UserID, &a.PlatformID, &a.DisplayName, &a.AuthMethod, &a.Email, &a.ProfilePath, &a.AccessToken, &a.RefreshToken, &a.Expiry, &a.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
+
+	// Decrypt tokens
+	if decryptedAt, err := crypto.Decrypt(a.AccessToken); err == nil {
+		a.AccessToken = decryptedAt
+	}
+	if decryptedRt, err := crypto.Decrypt(a.RefreshToken); err == nil {
+		a.RefreshToken = decryptedRt
+	}
+
 	return &a, nil
 }
 
 func (r *PostgresRepository) SaveConnectedAccount(ctx context.Context, acc *domain.ConnectedAccount) error {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO connected_accounts (id, user_id, platform_id, display_name, auth_method, email, profile_path, access_token, expiry, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	// Encrypt tokens before saving
+	encAccess, err := crypto.Encrypt(acc.AccessToken)
+	if err != nil {
+		return err
+	}
+	encRefresh, err := crypto.Encrypt(acc.RefreshToken)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO connected_accounts (id, user_id, platform_id, display_name, auth_method, email, profile_path, access_token, refresh_token, expiry, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (id) DO UPDATE SET
 			display_name = EXCLUDED.display_name,
 			access_token = EXCLUDED.access_token,
+			refresh_token = EXCLUDED.refresh_token,
 			expiry = EXCLUDED.expiry,
 			auth_method = EXCLUDED.auth_method,
 			email = EXCLUDED.email,
 			profile_path = EXCLUDED.profile_path
-	`, acc.ID, acc.UserID, acc.PlatformID, acc.DisplayName, acc.AuthMethod, acc.Email, acc.ProfilePath, acc.AccessToken, acc.Expiry, acc.CreatedAt)
+	`, acc.ID, acc.UserID, acc.PlatformID, acc.DisplayName, acc.AuthMethod, acc.Email, acc.ProfilePath, encAccess, encRefresh, acc.Expiry, acc.CreatedAt)
 	return err
 }
 
@@ -268,6 +298,34 @@ func (r *PostgresRepository) ListDistributionJobs(ctx context.Context, generatio
 		WHERE generation_job_id = $1
 		ORDER BY created_at DESC
 	`, generationJobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	jobs := []domain.DistributionJob{}
+	for rows.Next() {
+		var job domain.DistributionJob
+		var extID, errStr, detail string
+		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &job.CreatedAt, &job.UpdatedAt); err != nil {
+			return nil, err
+		}
+		job.StatusDetail = detail
+		job.ExternalID = extID
+		job.Error = errStr
+		jobs = append(jobs, job)
+	}
+	return jobs, nil
+}
+
+func (r *PostgresRepository) ListAllDistributionJobs(ctx context.Context, userID int) ([]domain.DistributionJob, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT dj.id, dj.generation_job_id, dj.account_id, dj.platform, dj.status, COALESCE(dj.status_detail, ''), COALESCE(dj.external_id, ''), COALESCE(dj.error, ''), dj.created_at, dj.updated_at
+		FROM distribution_jobs dj
+		JOIN connected_accounts ca ON ca.id = dj.account_id
+		WHERE ca.user_id = $1
+		ORDER BY dj.created_at DESC
+	`, userID)
 	if err != nil {
 		return nil, err
 	}

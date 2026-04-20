@@ -2,7 +2,6 @@ package adapters
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -133,25 +132,21 @@ func (p *DistributionPublisher) publishChromiumProfile(ctx context.Context, file
 	}
 
 	log.Printf("Publishing %s via Chromium profile for %s\n", filePath, account.ProfilePath)
-	log.Printf("Title: %s\n", title)
-	log.Printf("Description: %s\n", description)
 
-	if err := recordChromiumProfileUse(account.ProfilePath, title, description); err != nil {
-		return "", err
-	}
 	if progress != nil {
 		progress("profile_ready")
 	}
 
-	targetURL := browserTargetURL(account.PlatformID)
-	if targetURL == "" {
-		return buildExternalID("browser", title, account.Email), nil
+	url := browserTargetURL(account.PlatformID)
+	if url == "" {
+		return "", fmt.Errorf("missing browser target url for platform %s", account.PlatformID)
 	}
 
 	if p.browser == nil {
 		return "", fmt.Errorf("chromium runner unavailable")
 	}
-	if err := p.browser.AutomateUpload(ctx, account.ProfilePath, targetURL, filePath, title, description, account.PlatformID, progress); err != nil {
+
+	if err := p.browser.AutomateUpload(ctx, account.ProfilePath, url, filePath, title, description, account.PlatformID, progress); err != nil {
 		return "", err
 	}
 
@@ -166,35 +161,6 @@ func buildExternalID(prefix, title, email string) string {
 		slug = "post"
 	}
 	return fmt.Sprintf("%s_%d_%s", prefix, time.Now().Unix(), slug)
-}
-
-func recordChromiumProfileUse(profilePath, title, description string) error {
-	metaPath := browserProfileMetadataPath(profilePath)
-	payload := map[string]any{
-		"last_used_at": time.Now().UTC().Format(time.RFC3339),
-		"title":        title,
-		"description":  description,
-	}
-
-	if existing, err := os.ReadFile(metaPath); err == nil {
-		var current map[string]any
-		if json.Unmarshal(existing, &current) == nil {
-			for k, v := range current {
-				if _, ok := payload[k]; !ok {
-					payload[k] = v
-				}
-			}
-		}
-	}
-
-	data, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(profilePath, 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(metaPath, data, 0o644)
 }
 
 func (p *DistributionPublisher) publishWithRetry(ctx context.Context, fn publishFn, filePath, title, description string, account domain.ConnectedAccount, progress func(string)) (string, error) {

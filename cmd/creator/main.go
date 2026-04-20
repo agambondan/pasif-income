@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -26,7 +27,10 @@ func main() {
 	voice := adapters.NewVoiceAdapter("en-US-Standard-A")
 	image := adapters.NewStableDiffusionAdapter(os.Getenv("SD_API_URL"))
 	assembler := adapters.NewFFmpegAssembler()
-	uploader := newUploaderFromEnv()
+	uploader, err := newUploaderFromEnv()
+	if err != nil {
+		log.Fatalf("Uploader init failed: %v", err)
+	}
 
 	// 2. Initialize Service
 	service := services.NewGeneratorService(writer, voice, image, assembler, uploader)
@@ -54,11 +58,7 @@ func main() {
 	log.Println("Generation completed successfully!")
 }
 
-func newUploaderFromEnv() ports.Uploader {
-	if os.Getenv("USE_MOCK") == "true" {
-		return adapters.NewMockUploader("YouTube Shorts")
-	}
-
+func newUploaderFromEnv() (ports.Uploader, error) {
 	endpoint := os.Getenv("MINIO_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "localhost:9002"
@@ -78,9 +78,8 @@ func newUploaderFromEnv() ports.Uploader {
 
 	uploader, err := adapters.NewMinIOUploader(endpoint, accessKey, secretKey, bucket, "YouTube Shorts")
 	if err != nil {
-		log.Printf("MinIO uploader warning: %v (falling back to mock)\n", err)
-		return adapters.NewMockUploader("YouTube Shorts")
+		return nil, fmt.Errorf("init minio uploader: %w", err)
 	}
 
-	return uploader
+	return uploader, nil
 }

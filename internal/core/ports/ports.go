@@ -24,6 +24,7 @@ type Repository interface {
 	CreateDistributionJob(ctx context.Context, job *domain.DistributionJob) error
 	ListPendingDistributionJobs(ctx context.Context) ([]domain.DistributionJob, error)
 	ListDistributionJobs(ctx context.Context, generationJobID string) ([]domain.DistributionJob, error)
+	ListAllDistributionJobs(ctx context.Context, userID int) ([]domain.DistributionJob, error)
 	UpdateDistributionJobStatus(ctx context.Context, jobID int, status string, statusDetail string, externalID string, errMsg string) error
 
 	// Users & Auth

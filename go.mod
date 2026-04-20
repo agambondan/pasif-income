@@ -3,6 +3,7 @@ module github.com/agambondan/pasif-income
 go 1.26
 
 require (
+	github.com/chromedp/chromedp v0.15.1
 	github.com/google/generative-ai-go v0.20.1
 	github.com/lib/pq v1.12.3
 	github.com/minio/minio-go/v7 v7.0.100
@@ -20,7 +21,6 @@ require (
 	cloud.google.com/go/longrunning v0.5.7 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc // indirect
-	github.com/chromedp/chromedp v0.15.1 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect

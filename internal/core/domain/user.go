@@ -17,16 +17,17 @@ type Platform struct {
 }
 
 type ConnectedAccount struct {
-	ID          string    `json:"id"`
-	UserID      int       `json:"user_id"`
-	PlatformID  string    `json:"platform_id"`
-	DisplayName string    `json:"display_name"`
-	AuthMethod  string    `json:"auth_method"` // "api" or "chromium_profile"
-	Email       string    `json:"email"`
-	ProfilePath string    `json:"profile_path"` // Chromium profile directory for browser automation
-	AccessToken string    `json:"-"`
-	Expiry      time.Time `json:"expiry"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID           string    `json:"id"`
+	UserID       int       `json:"user_id"`
+	PlatformID   string    `json:"platform_id"`
+	DisplayName  string    `json:"display_name"`
+	AuthMethod   string    `json:"auth_method"` // "api" or "chromium_profile"
+	Email        string    `json:"email"`
+	ProfilePath  string    `json:"profile_path"` // Chromium profile directory for browser automation
+	AccessToken  string    `json:"-"`
+	RefreshToken string    `json:"-"`
+	Expiry       time.Time `json:"expiry"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 const (

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/agambondan/pasif-income/internal/adapters"
-	"github.com/agambondan/pasif-income/internal/core/ports"
 	"github.com/agambondan/pasif-income/internal/services"
 )
 
@@ -21,15 +20,12 @@ func main() {
 
 	downloader := adapters.NewYtdlpDownloader()
 
-	var transcriber ports.Transcriber
-	var agent ports.StrategistAgent
-	if os.Getenv("USE_MOCK") == "true" {
-		transcriber = adapters.NewMockTranscriber()
-		agent = adapters.NewMockStrategist()
-	} else {
-		transcriber = adapters.NewWhisperTranscriber(whisperURL())
-		agent = adapters.NewGeminiAgent(apiKey)
+	if apiKey == "" {
+		log.Fatal("ERROR: GEMINI_API_KEY must be set.")
 	}
+
+	transcriber := adapters.NewWhisperTranscriber(whisperURL())
+	agent := adapters.NewGeminiAgent(apiKey)
 
 	vision := adapters.NewPythonVisionAgent("scripts/face_tracker.py")
 
@@ -38,13 +34,13 @@ func main() {
 	// Storage (MinIO)
 	storage, err := adapters.NewMinIOStorage(minioEndpoint(), minioAccessKey(), minioSecretKey(), minioBucket())
 	if err != nil {
-		log.Printf("MinIO Warning: %v (Continuing...)\n", err)
+		log.Fatalf("MinIO init failed: %v", err)
 	}
 
 	// Repository (Postgres)
 	repo, err := adapters.NewPostgresRepository(postgresDSN())
 	if err != nil {
-		log.Printf("Postgres Warning: %v (Continuing...)\n", err)
+		log.Fatalf("Postgres init failed: %v", err)
 	}
 
 	// 2. Initialize Service

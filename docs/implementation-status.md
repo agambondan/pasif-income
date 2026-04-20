@@ -39,19 +39,15 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
   - YouTube API path
   - Chromium profile fallback
 
-## Mock / Stub
+## Current Notes
 
-- OAuth connect masih berupa mock redirect, tapi sekarang sudah mengikat ke session user dan Chromium profile path.
+- OAuth connect untuk Chromium profile sudah membuat profile path nyata dan mengikat ke session user.
+- YouTube API connect sekarang memakai OAuth redirect + token exchange.
 - `distribution_jobs` masih diproses dengan worker polling sederhana, belum queue/broker terpisah.
-- `USE_MOCK` fallback masih dipakai pada beberapa adapter:
-  - transcriber
-  - strategist
-  - uploader
 
 ## Not Started
 
-- token encryption at rest untuk account linking
-- token refresh dan revoke flow
+- token refresh dan revoke flow untuk provider lain di luar YouTube
 - retry/failover per destination
 - publish history di UI
 - platform-specific upload adapter yang benar-benar real

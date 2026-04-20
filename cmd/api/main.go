@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +19,7 @@ import (
 	"github.com/agambondan/pasif-income/internal/core/domain"
 	"github.com/agambondan/pasif-income/internal/core/ports"
 	"github.com/agambondan/pasif-income/internal/services"
+	"golang.org/x/oauth2"
 )
 
 type generateRequest struct {
@@ -49,12 +52,17 @@ func main() {
 	}
 
 	api := &apiServer{
-		repo:      repo,
-		storage:   storage,
-		generator: newGeneratorServiceFromEnv(),
-		auth:      services.NewAuthService(repo),
-		platform:  services.NewPlatformService(repo),
+		repo:     repo,
+		storage:  storage,
+		auth:     services.NewAuthService(repo),
+		platform: services.NewPlatformService(repo),
 	}
+
+	generator, err := newGeneratorServiceFromEnv()
+	if err != nil {
+		log.Fatalf("Generator init failed: %v", err)
+	}
+	api.generator = generator
 
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		log.Println("CRITICAL ERROR: GEMINI_API_KEY is not set. Generation will FAIL.")
@@ -75,6 +83,8 @@ func main() {
 	mux.HandleFunc("/api/health", api.healthHandler)
 	mux.HandleFunc("/api/auth/login", api.loginHandler)
 	mux.HandleFunc("/api/auth/logout", api.logoutHandler)
+	mux.HandleFunc("/api/auth/refresh/", api.refreshTokenHandler)
+	mux.HandleFunc("/api/auth/revoke/", api.revokeTokenHandler)
 	mux.HandleFunc("/api/platforms", api.platformsHandler)
 	mux.HandleFunc("/api/accounts", api.accountsHandler)
 	mux.HandleFunc("/api/accounts/", api.deleteAccountHandler)
@@ -82,6 +92,7 @@ func main() {
 	mux.HandleFunc("/api/videos", api.videosHandler)
 	mux.HandleFunc("/api/clips", api.clipsHandler)
 	mux.HandleFunc("/api/generate", api.generateHandler)
+	mux.HandleFunc("/api/publish/history", api.publishHistoryHandler)
 	mux.HandleFunc("/api/jobs", api.jobsHandler)
 	mux.HandleFunc("/api/jobs/", api.jobByIDHandler)
 
@@ -232,9 +243,52 @@ func (a *apiServer) deleteAccountHandler(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (a *apiServer) refreshTokenHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/auth/refresh/")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	acc, err := a.auth.RefreshAccountToken(r.Context(), id, userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, acc)
+}
+
+func (a *apiServer) revokeTokenHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/auth/revoke/")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if err := a.auth.RevokeAccountToken(r.Context(), id, userID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (a *apiServer) oauthHandler(w http.ResponseWriter, r *http.Request) {
-	// Simple stub for OAuth/Chromium profile flow
-	// /api/auth/{platform}?method=chromium_profile -> redirect to provider (mock)
 	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/auth/"), "/")
 	if len(pathParts) == 0 || pathParts[0] == "" {
 		http.NotFound(w, r)
@@ -248,33 +302,220 @@ func (a *apiServer) oauthHandler(w http.ResponseWriter, r *http.Request) {
 	if method == "browser" {
 		method = domain.AuthMethodChromiumProfile
 	}
+	if method != domain.AuthMethodChromiumProfile && method != domain.AuthMethodAPI {
+		http.Error(w, "unsupported auth method", http.StatusBadRequest)
+		return
+	}
 
-	if len(pathParts) > 1 && pathParts[1] == "callback" {
-		userID, err := a.currentUserID(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	if method == domain.AuthMethodChromiumProfile {
+		email := strings.TrimSpace(r.URL.Query().Get("email"))
+		if email == "" {
+			http.Error(w, "email is required for chromium profile linking", http.StatusBadRequest)
 			return
 		}
-		email := r.URL.Query().Get("email")
-		if email == "" {
-			email = "test-operator@gmail.com"
+
+		displayName := strings.TrimSpace(r.URL.Query().Get("display_name"))
+		if displayName == "" {
+			displayName = strings.ToUpper(platform) + " Chromium Profile"
 		}
-		displayName := "Test " + strings.ToUpper(platform) + " (" + strings.ToUpper(strings.ReplaceAll(method, "_", " ")) + ")"
-		acc, err := a.auth.LinkConnectedAccount(r.Context(), userID, platform, displayName, email, method)
+
+		acc, err := a.auth.LinkConnectedAccount(r.Context(), userID, platform, displayName, email, method, "", "", time.Time{})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if method == domain.AuthMethodChromiumProfile {
-			log.Printf("Chromium profile ready for %s at %s\n", acc.Email, acc.ProfilePath)
+		log.Printf("Chromium profile ready for %s at %s\n", acc.Email, acc.ProfilePath)
+
+		if len(pathParts) > 1 && pathParts[1] == "callback" {
+			writeJSON(w, http.StatusOK, acc)
+			return
 		}
-		// Redirect back to frontend integrations page
+
 		http.Redirect(w, r, "http://localhost:13100/integrations", http.StatusFound)
 		return
 	}
 
-	// Mock redirect
-	http.Redirect(w, r, "/api/auth/"+platform+"/callback?code=mock&method="+method+"&email=test-operator%40gmail.com", http.StatusFound)
+	if platform != "youtube" {
+		http.Error(w, "api connect is only wired for youtube", http.StatusNotImplemented)
+		return
+	}
+
+	stateCookie, _ := r.Cookie("cf_oauth_state")
+	if len(pathParts) > 1 && pathParts[1] == "callback" {
+		if stateCookie == nil || stateCookie.Value == "" {
+			http.Error(w, "oauth state missing", http.StatusBadRequest)
+			return
+		}
+		if got := strings.TrimSpace(r.URL.Query().Get("state")); got == "" || got != stateCookie.Value {
+			http.Error(w, "oauth state mismatch", http.StatusBadRequest)
+			return
+		}
+		clearOAuthStateCookie(w)
+
+		acc, err := a.completeYouTubeAPIConnect(r, userID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, acc)
+		return
+	}
+
+	state, err := randomOAuthState()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cf_oauth_state",
+		Value:    state,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int((10 * time.Minute).Seconds()),
+	})
+
+	authURL, err := youtubeAuthURL(state)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotImplemented)
+		return
+	}
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+func (a *apiServer) completeYouTubeAPIConnect(r *http.Request, userID int) (*domain.ConnectedAccount, error) {
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if code == "" {
+		return nil, errors.New("oauth code is required")
+	}
+
+	cfg, err := youtubeOAuthConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := cfg.Exchange(r.Context(), code)
+	if err != nil {
+		return nil, fmt.Errorf("exchange oauth code: %w", err)
+	}
+
+	email, displayName, err := fetchGoogleUserInfo(r.Context(), token.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+	if displayName == "" {
+		displayName = "YouTube API"
+	}
+
+	return a.auth.LinkConnectedAccount(r.Context(), userID, "youtube", displayName, email, domain.AuthMethodAPI, token.AccessToken, token.RefreshToken, token.Expiry)
+}
+
+func youtubeOAuthConfig() (*oauth2.Config, error) {
+	clientID := strings.TrimSpace(os.Getenv("YOUTUBE_CLIENT_ID"))
+	clientSecret := strings.TrimSpace(os.Getenv("YOUTUBE_CLIENT_SECRET"))
+	redirectURL := strings.TrimSpace(os.Getenv("YOUTUBE_REDIRECT_URL"))
+	if clientID == "" || clientSecret == "" || redirectURL == "" {
+		return nil, errors.New("youtube oauth config is incomplete; set YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, and YOUTUBE_REDIRECT_URL")
+	}
+
+	return &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURL:  redirectURL,
+		Scopes:       youtubeOAuthScopes(),
+		Endpoint:     oauth2.Endpoint{AuthURL: "https://accounts.google.com/o/oauth2/v2/auth", TokenURL: "https://oauth2.googleapis.com/token"},
+	}, nil
+}
+
+func youtubeOAuthScopes() []string {
+	raw := strings.TrimSpace(os.Getenv("YOUTUBE_SCOPES"))
+	if raw == "" {
+		return []string{
+			"https://www.googleapis.com/auth/youtube.upload",
+			"https://www.googleapis.com/auth/userinfo.email",
+			"https://www.googleapis.com/auth/userinfo.profile",
+			"openid",
+		}
+	}
+
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ' '
+	})
+	scopes := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			scopes = append(scopes, trimmed)
+		}
+	}
+	return scopes
+}
+
+func fetchGoogleUserInfo(ctx context.Context, accessToken string) (string, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.googleapis.com/oauth2/v2/userinfo", nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(accessToken))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		return "", "", fmt.Errorf("userinfo lookup failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	var payload struct {
+		Email       string `json:"email"`
+		Name        string `json:"name"`
+		GivenName   string `json:"given_name"`
+		Verified    bool   `json:"verified_email"`
+		ProfileLink string `json:"profile"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", "", err
+	}
+
+	displayName := strings.TrimSpace(payload.Name)
+	if displayName == "" {
+		displayName = strings.TrimSpace(payload.GivenName)
+	}
+	return strings.TrimSpace(payload.Email), displayName, nil
+}
+
+func youtubeAuthURL(state string) (string, error) {
+	cfg, err := youtubeOAuthConfig()
+	if err != nil {
+		return "", err
+	}
+	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce), nil
+}
+
+func randomOAuthState() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func clearOAuthStateCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cf_oauth_state",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func (a *apiServer) videosHandler(w http.ResponseWriter, r *http.Request) {
@@ -290,23 +531,26 @@ func (a *apiServer) videosHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, files)
 }
 
-func newGeneratorServiceFromEnv() *services.GeneratorService {
+func newGeneratorServiceFromEnv() (*services.GeneratorService, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
+	accessToken := os.Getenv("GEMINI_ACCESS_TOKEN")
+	if apiKey == "" && accessToken == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY or GEMINI_ACCESS_TOKEN must be set")
+	}
 
 	writer := adapters.NewGeminiWriter(apiKey)
 	voice := adapters.NewVoiceAdapter("en-US-Standard-A")
 	image := adapters.NewStableDiffusionAdapter(os.Getenv("SD_API_URL"))
 	assembler := adapters.NewFFmpegAssembler()
-	uploader := newUploaderFromEnv()
-
-	return services.NewGeneratorService(writer, voice, image, assembler, uploader)
-}
-
-func newUploaderFromEnv() ports.Uploader {
-	if os.Getenv("USE_MOCK") == "true" {
-		return adapters.NewMockUploader("YouTube Shorts")
+	uploader, err := newUploaderFromEnv()
+	if err != nil {
+		return nil, err
 	}
 
+	return services.NewGeneratorService(writer, voice, image, assembler, uploader), nil
+}
+
+func newUploaderFromEnv() (ports.Uploader, error) {
 	endpoint := os.Getenv("MINIO_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "localhost:9002"
@@ -326,11 +570,10 @@ func newUploaderFromEnv() ports.Uploader {
 
 	uploader, err := adapters.NewMinIOUploader(endpoint, accessKey, secretKey, bucket, "YouTube Shorts")
 	if err != nil {
-		log.Printf("MinIO uploader warning: %v (falling back to mock)\n", err)
-		return adapters.NewMockUploader("YouTube Shorts")
+		return nil, fmt.Errorf("init minio uploader: %w", err)
 	}
 
-	return uploader
+	return uploader, nil
 }
 
 func newPublisherFromEnv() ports.Publisher {
@@ -567,6 +810,28 @@ func (a *apiServer) distributionsHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	writeJSON(w, http.StatusOK, jobs)
+}
+
+func (a *apiServer) publishHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if a.repo == nil {
+		http.Error(w, "repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	jobs, err := a.repo.ListAllDistributionJobs(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, http.StatusOK, jobs)
 }
 

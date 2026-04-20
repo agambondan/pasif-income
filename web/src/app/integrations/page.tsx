@@ -23,7 +23,9 @@ export default function Integrations() {
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [connectEmail, setConnectEmail] = useState<Record<string, string>>({});
   const [selectedMethod, setSelectedMethod] = useState<Record<string, string>>({});
+  const [connecting, setConnecting] = useState<Record<string, boolean>>({});
 
   const formatMethod = (method: string) => method.replace(/_/g, ' ');
 
@@ -38,10 +40,9 @@ export default function Integrations() {
         if (platRes.ok) {
           const p = await platRes.json();
           setPlatforms(p || []);
-          // Default method to the first available for each platform
           const methods: Record<string, string> = {};
-          p.forEach((plat: Platform) => {
-            methods[plat.id] = plat.supported_methods[0];
+          p.forEach((platform: Platform) => {
+            methods[platform.id] = platform.supported_methods[0] || 'chromium_profile';
           });
           setSelectedMethod(methods);
         }
@@ -58,9 +59,23 @@ export default function Integrations() {
     fetchData();
   }, []);
 
-  const handleConnect = (platformId: string) => {
+  const handleConnect = async (platformId: string) => {
     const method = selectedMethod[platformId] || 'chromium_profile';
-    window.location.assign(`/api/auth/${platformId}?method=${method}`);
+    const email = (connectEmail[platformId] || '').trim();
+    if (method === 'chromium_profile' && !email) {
+      alert('Email akun harus diisi dulu untuk Chromium profile.');
+      return;
+    }
+    setConnecting(prev => ({ ...prev, [platformId]: true }));
+    try {
+      const params = new URLSearchParams({ method });
+      if (email) {
+        params.set('email', email);
+      }
+      window.location.assign(`/api/auth/${platformId}?${params.toString()}`);
+    } finally {
+      setConnecting(prev => ({ ...prev, [platformId]: false }));
+    }
   };
 
   const handleDisconnect = async (accountId: string) => {
@@ -101,15 +116,15 @@ export default function Integrations() {
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <div className="flex bg-zinc-900 p-1 rounded-xl border border-white/5">
-                        {platform.supported_methods.map(m => (
-                            <button
-                                key={m}
-                                onClick={() => setSelectedMethod({...selectedMethod, [platform.id]: m})}
-                                className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${selectedMethod[platform.id] === m ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20' : 'text-zinc-500 hover:text-zinc-300'}`}
-                            >
-                                {formatMethod(m)}
-                            </button>
-                        ))}
+                      {platform.supported_methods.map(m => (
+                        <button
+                          key={m}
+                          onClick={() => setSelectedMethod(prev => ({ ...prev, [platform.id]: m }))}
+                          className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${selectedMethod[platform.id] === m ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20' : 'text-zinc-500 hover:text-zinc-300'}`}
+                        >
+                          {formatMethod(m)}
+                        </button>
+                      ))}
                     </div>
                     {connectedForPlatform.length > 0 && (
                       <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full animate-pulse">ACTIVE</span>
@@ -151,12 +166,26 @@ export default function Integrations() {
                         </div>
                     )}
                 </div>
-                
+                <label className="mb-4 block">
+                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Account Email {selectedMethod[platform.id] === 'chromium_profile' ? '' : '(Optional)'}</span>
+                  <input
+                    value={connectEmail[platform.id] || ''}
+                    onChange={(event) => setConnectEmail(prev => ({ ...prev, [platform.id]: event.target.value }))}
+                    placeholder={selectedMethod[platform.id] === 'chromium_profile' ? 'operator@example.com' : 'optional for chromium profile'}
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/40"
+                  />
+                </label>
+
                 <button 
                   onClick={() => handleConnect(platform.id)}
+                  disabled={connecting[platform.id]}
                   className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl transition-all duration-300 transform active:scale-95 shadow-lg shadow-emerald-900/20 relative z-10"
                 >
-                  CONNECT NEW CHROMIUM PROFILE
+                  {connecting[platform.id]
+                    ? 'CONNECTING...'
+                    : selectedMethod[platform.id] === 'api'
+                      ? 'CONNECT YOUTUBE API'
+                      : 'CONNECT NEW CHROMIUM PROFILE'}
                 </button>
               </div>
             );
