@@ -37,6 +37,7 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 - Distribution worker sudah memproses pending `distribution_jobs`.
 - Metrics worker sudah melakukan sync snapshot metrik YouTube ke Postgres.
 - Dashboard analytics sudah menampilkan growth by niche, video, platform, dan akun.
+- Quality control agent sekarang memblokir upload kalau render atau isi konten gagal review.
 - Publisher adapter sudah punya:
   - YouTube API path
   - Chromium profile fallback
@@ -47,6 +48,7 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 - YouTube API connect sekarang memakai OAuth redirect + token exchange, dengan scope read untuk analytics.
 - Dashboard videos sekarang punya panel analytics metrik dasar.
 - `distribution_jobs` dan metrics masih diproses dengan worker polling sederhana, belum queue/broker terpisah.
+- QC reviewer masih heuristik-first dengan Gemini sebagai reviewer tambahan kalau kredensial ada.
 
 ## Not Started
 

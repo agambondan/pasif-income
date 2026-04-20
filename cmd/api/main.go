@@ -662,7 +662,8 @@ func newGeneratorServiceFromEnv() (*services.GeneratorService, error) {
 		return nil, err
 	}
 
-	return services.NewGeneratorService(writer, voice, image, assembler, uploader), nil
+	qc := services.NewQualityControlService(apiKey)
+	return services.NewGeneratorService(writer, voice, image, assembler, uploader, qc), nil
 }
 
 func newUploaderFromEnv() (ports.Uploader, error) {
