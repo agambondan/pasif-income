@@ -140,35 +140,41 @@ func (r *ChromiumRunner) AutomateUpload(ctx context.Context, profilePath, target
 		return err
 	}
 
-	stage = "open_upload_flow"
-	if progress != nil {
-		progress("opening_upload_flow")
-	}
-	if err = clickFirstTextMatch(runCtx, uploadActionTerms(platformID)); err != nil {
-		return fmt.Errorf("upload action not found for %s: %w", platformID, err)
-	}
+	if platformID == "youtube" {
+		if err = automateYouTubeUpload(runCtx, filePath, title, description, progress); err != nil {
+			return err
+		}
+	} else {
+		stage = "open_upload_flow"
+		if progress != nil {
+			progress("opening_upload_flow")
+		}
+		if err = clickFirstTextMatch(runCtx, uploadActionTerms(platformID)); err != nil {
+			return fmt.Errorf("upload action not found for %s: %w", platformID, err)
+		}
 
-	stage = "attach_file"
-	if progress != nil {
-		progress("attaching_file")
-	}
-	if err = waitAndSetUploadFile(runCtx, platformID, filePath); err != nil {
-		return err
-	}
+		stage = "attach_file"
+		if progress != nil {
+			progress("attaching_file")
+		}
+		if err = waitAndSetUploadFile(runCtx, platformID, filePath); err != nil {
+			return err
+		}
 
-	stage = "fill_metadata"
-	if progress != nil {
-		progress("filling_metadata")
-	}
-	_ = setFirstValue(runCtx, titleSelectors(platformID), title)
-	_ = setFirstValue(runCtx, descriptionSelectors(platformID), description)
+		stage = "fill_metadata"
+		if progress != nil {
+			progress("filling_metadata")
+		}
+		_ = setFirstValue(runCtx, titleSelectors(platformID), title)
+		_ = setFirstValue(runCtx, descriptionSelectors(platformID), description)
 
-	stage = "publish"
-	if progress != nil {
-		progress("publishing")
-	}
-	if err = clickFirstTextMatch(runCtx, publishActionTerms(platformID)); err != nil {
-		return fmt.Errorf("publish action not found for %s: %w", platformID, err)
+		stage = "publish"
+		if progress != nil {
+			progress("publishing")
+		}
+		if err = clickFirstTextMatch(runCtx, publishActionTerms(platformID)); err != nil {
+			return fmt.Errorf("publish action not found for %s: %w", platformID, err)
+		}
 	}
 
 	if progress != nil {
@@ -235,7 +241,7 @@ func browserTargetURL(platformID string) string {
 		if url := strings.TrimSpace(os.Getenv("YOUTUBE_UPLOAD_URL")); url != "" {
 			return url
 		}
-		return "https://studio.youtube.com"
+		return "https://www.youtube.com/upload"
 	case "tiktok":
 		if url := strings.TrimSpace(os.Getenv("TIKTOK_UPLOAD_URL")); url != "" {
 			return url
@@ -320,6 +326,86 @@ func waitAndSetUploadFile(ctx context.Context, platformID, filePath string) erro
 		}
 	}
 	return fmt.Errorf("upload file input not found")
+}
+
+func automateYouTubeUpload(ctx context.Context, filePath, title, description string, progress func(string)) error {
+	if progress != nil {
+		progress("attaching_file")
+	}
+	if err := waitAndSetUploadFile(ctx, "youtube", filePath); err != nil {
+		return err
+	}
+
+	if progress != nil {
+		progress("waiting_for_form")
+	}
+	if err := waitForAnyVisible(ctx, append(titleSelectors("youtube"), descriptionSelectors("youtube")...)); err != nil {
+		return fmt.Errorf("youtube upload form not ready: %w", err)
+	}
+
+	if progress != nil {
+		progress("filling_metadata")
+	}
+	if err := setFirstValue(ctx, titleSelectors("youtube"), title); err != nil {
+		log.Printf("youtube title field not found: %v\n", err)
+	}
+	if err := setFirstValue(ctx, descriptionSelectors("youtube"), description); err != nil {
+		log.Printf("youtube description field not found: %v\n", err)
+	}
+
+	if progress != nil {
+		progress("setting_audience")
+	}
+	_ = clickFirstTextMatch(ctx, []string{
+		"no, it's not made for kids",
+		"no, this is not made for kids",
+		"made for kids",
+	})
+
+	if progress != nil {
+		progress("advancing_steps")
+	}
+	if err := clickFirstTextMatch(ctx, []string{"Next"}); err != nil {
+		return fmt.Errorf("youtube next button not found: %w", err)
+	}
+	if err := waitShort(ctx); err != nil {
+		return err
+	}
+	_ = clickFirstTextMatch(ctx, []string{"Next"})
+	_ = waitShort(ctx)
+	_ = clickFirstTextMatch(ctx, []string{"Next"})
+	_ = waitShort(ctx)
+
+	if progress != nil {
+		progress("publishing")
+	}
+	if err := clickFirstTextMatch(ctx, []string{"Publish", "Save"}); err != nil {
+		return fmt.Errorf("youtube publish button not found: %w", err)
+	}
+
+	_ = waitShort(ctx)
+	_ = clickFirstTextMatch(ctx, []string{"Publish", "Save"})
+	return nil
+}
+
+func waitForAnyVisible(ctx context.Context, selectors []string) error {
+	for _, selector := range selectors {
+		if err := chromedp.Run(ctx, chromedp.WaitVisible(selector, chromedp.ByQuery)); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("no matching visible element found")
+}
+
+func waitShort(ctx context.Context) error {
+	timer := time.NewTimer(1500 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func setFirstValue(ctx context.Context, selectors []string, value string) error {

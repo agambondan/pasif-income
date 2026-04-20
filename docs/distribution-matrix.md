@@ -8,7 +8,7 @@ Dokumen ini menjelaskan target distribusi konten untuk `pasif-income` dan bagaim
 - `clipper` sudah bisa memproses video panjang menjadi clip pendek.
 - Pipeline upload masih **single target** per job.
 - Belum ada UI checkbox untuk memilih multiple platform atau multiple account.
-- OAuth connect untuk akun platform masih stub dan belum aman untuk production.
+- OAuth connect untuk akun platform sekarang diarahkan ke flow real: YouTube API OAuth atau Chromium profile linking.
 
 ## Three Draft Tracks
 
@@ -201,7 +201,7 @@ Urutan yang paling aman:
 
 ## Status Cross-Reference
 
-Kalau butuh ringkasan real vs mock, lihat [Implementation Status](./implementation-status.md).
+Kalau butuh ringkasan current vs planned, lihat [Implementation Status](./implementation-status.md).
 
 ## Related Docs
 

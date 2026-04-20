@@ -10,7 +10,7 @@ This project automates the conversion of long-form videos into viral short-form 
 - **Self-Hosted**: Docker-based architecture with local transcription and storage.
 - **Distribution Matrix**: Traceable plan for multi-platform and multi-account upload.
 - **Platform Auth**: API upload plus Chromium profile linking for upload destinations.
-- **Implementation Status**: Single source of truth for done, mock, and planned work.
+- **Implementation Status**: Single source of truth for done, current, and planned work.
 
 ## Tech Stack
 
