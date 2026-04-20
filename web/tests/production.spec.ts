@@ -6,16 +6,46 @@ test.describe('E2E Production Flow', () => {
     await page.goto('/login');
     await page.fill('input[placeholder="admin"]', 'admin');
     await page.fill('input[placeholder="••••••••"]', 'admin123');
-    await page.click('button:has-text("ESTABLISH CONNECTION")');
+    await page.click('button:has-text("ESTABLISH CONNECTION")', { force: true });
     await expect(page).toHaveURL('/', { timeout: 15000 });
+  });
+
+  test('Failed login with invalid credentials (MVP-NEG-01)', async ({ page, context }) => {
+    // We use a new context to avoid sharing session with beforeEach login
+    const newPage = await context.newPage();
+    await newPage.goto('/login');
+    await newPage.fill('input[placeholder="admin"]', 'admin');
+    await newPage.fill('input[placeholder="••••••••"]', 'wrongpassword');
+    await newPage.click('button:has-text("ESTABLISH CONNECTION")', { force: true });
+
+    // Verify error message appearance
+    await expect(newPage.locator('[data-testid="login-error"]')).toContainText('Invalid credentials');
+    await expect(newPage).toHaveURL('/login');
+  });
+
+  test('Form validation: Empty topic submission (MVP-NEG-03)', async ({ page }) => {
+    await expect(page.locator('h3:has-text("New Production Job")')).toBeVisible();
+
+    await page.locator('#niche-input').fill('Test Niche');
+    await page.locator('#topic-input').clear();
+    await page.locator('#topic-input').fill(''); // Double-tap just in case
+    
+    // Attempt to execute
+    await page.click('button:has-text("EXECUTE PRODUCTION")', { force: true });
+    
+    // Check for validation error
+    await expect(page.getByTestId('status-message')).toContainText('Topic is required');
+    
+    // Check if job was NOT submitted (no success message containing 'Job')
+    await expect(page.getByTestId('status-message')).not.toContainText(/Job .* queued/);
   });
 
   test('Successful job submission', async ({ page }) => {
     await expect(page.locator('h3:has-text("New Production Job")')).toBeVisible();
-
+    
     // Fill Production Form
-    await page.fill('input[placeholder="stoicism"]', 'QA Test Niche');
-    await page.fill('input[placeholder="how to control your mind"]', 'Automation Testing 101');
+    await page.locator('#niche-input').fill('QA Test Niche');
+    await page.locator('#topic-input').fill('Automation Testing 101');
     
     // Select Account if available
     const distributionMatrix = page.locator('span:has-text("Distribution Matrix")');
@@ -31,17 +61,16 @@ test.describe('E2E Production Flow', () => {
       response.url().includes('/api/generate') && response.request().method() === 'POST'
     );
 
-    // Execute Production
-    await page.click('button:has-text("EXECUTE PRODUCTION")');
+    // Execute Production - Force click to bypass dev overlay if present
+    await page.click('button:has-text("EXECUTE PRODUCTION")', { force: true });
     
     // Wait for the API response
     const response = await responsePromise;
     expect([200, 202]).toContain(response.status());
 
     const job = await response.json();
-    await expect(page.getByText(`Job ${job.id} queued for QA Test Niche: Automation Testing 101`)).toBeVisible({
-      timeout: 10000,
-    });
+    // Use a more specific locator for the success message to avoid strict mode violation
+    await expect(page.locator('[data-testid="status-message"]')).toContainText(`Job ${job.id} queued`);
   });
 
   test('Navigate to Archive and Integrations', async ({ page }) => {

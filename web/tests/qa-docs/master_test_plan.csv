@@ -1,0 +1,20 @@
+id,module,scenario,priority,test_steps,expected_result
+MVP-01,Core,User Authentication,High,"1. Input credentials, 2. Submit login, 3. Check session cookie",Operator redirected to dashboard with valid session
+MVP-02,Core,Platform Account Linking,High,"1. Select platform, 2. Enter email, 3. Connect",Account appears in dashboard with active status
+MVP-03,Core,Job Execution Flow,High,"1. Fill niche & topic, 2. Select accounts, 3. Click Execute",Job created in DB and distribution jobs queued
+MVP-04,Core,Status Monitoring,Medium,"1. Open active jobs, 2. Watch progress bar",Status changes from queued to running to completed
+P2-01,Analytics,Metrics Scraping,High,"1. Trigger sync, 2. Check view counts in UI",Data views/likes/comments updated from platform API
+P2-02,Branding,AI Avatar Consistency,Medium,"1. Generate multiple videos in same niche, 2. Compare faces",AI Avatar remains recognizable and consistent
+P2-03,QC,AI Reviewer,High,"1. Finish render, 2. Run AI QC, 3. Check report",QC identifies audio/text errors and triggers re-render if needed
+P2-04,Schedule,Drip Feed Upload,High,"1. Queue 10 videos, 2. Check upload timestamps",Videos are uploaded one-by-one with set interval
+P2-05,Research,Trend Discovery,Medium,"1. Run scraper, 2. Check idea list in UI",Trending topics in specific niche are suggested automatically
+P3-01,Monetization,Affiliate Insertion,High,"1. Analyze script, 2. Find product, 3. Insert link",Affiliate link is present in video description
+P3-02,Global,Auto-Dubbing,Medium,"1. Select ID video, 2. Choose EN target, 3. Listen to output",Video audio replaced with EN voice while maintaining tone
+P3-03,Engagement,AI Comment Responder,Medium,"1. New comment posted, 2. Agent reply",AI replies to comment according to channel persona
+P3-04,Security,Proxy Manager,High,"1. Start upload for Acc A & B, 2. Check IP",Each account uploads from a distinct proxy/IP address
+P3-05,Evergreen,Content Recycling,Medium,"1. Detect old viral video, 2. Remix visuals, 3. Re-upload",Old content is remastered and successfully re-distributed
+P4-01,Repurpose,Video-to-Text (Ollama),Medium,"1. Get transcript, 2. Run local LLM, 3. Check X Thread",A high-quality text thread is generated from video content
+P4-02,Optimization,A/B Testing Hook,High,"1. Input 1 script, 2. Render 3 versions, 3. Compare views",3 different openers are tested and results tracked
+P4-03,Visual,Sentiment B-Roll,Medium,"1. Detect emotion in script, 2. Match B-Roll",Visuals match the emotional tone of the narration
+P4-04,FinOps,API Cost Optimizer,High,"1. Task complexity low, 2. Check LLM used",System uses local Ollama instead of Gemini for simple tasks
+P4-05,Legal,Auto-Dispute Defense,Medium,"1. Receive copyright claim, 2. Auto-generate appeal",Legal appeal is sent automatically using Fair Use template

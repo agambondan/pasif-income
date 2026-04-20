@@ -1,0 +1,43 @@
+id,module,scenario,type,priority,test_steps,expected_result
+MVP-POS-01,Auth,Valid Admin Login,Positive,High,"1. Input admin/admin123, 2. Submit",Redirect to dashboard
+MVP-NEG-01,Auth,Invalid Password,Negative,High,"1. Input admin/wrongpass, 2. Submit",Error message "Invalid credentials"
+MVP-EDG-01,Auth,Session Expiry,Edge,Medium,"1. Login, 2. Wait for session to expire, 3. Refresh",Auto-redirect to /login
+MVP-POS-02,Accounts,Link YouTube API,Positive,High,"1. Select API, 2. Connect",Account active in dashboard
+MVP-NEG-02,Accounts,Link with Expired Token,Negative,High,"1. Use expired OAuth token, 2. Connect",System shows "Token Invalid" error
+MVP-EDG-02,Accounts,Duplicate Account Email,Edge,Low,"1. Connect same email twice",System handles as update or shows duplicate warning
+MVP-POS-03,Production,Execute Valid Job,Positive,High,"1. Fill niche/topic, 2. Execute",Job status becomes 'queued'
+MVP-NEG-03,Production,Empty Topic Submission,Negative,High,"1. Leave topic empty, 2. Execute",Validation error "Topic is required"
+MVP-EDG-03,Production,Max Character Niche,Edge,Low,"1. Input 5000 chars in niche, 2. Execute",System truncates or handles large text without crash
+P2-POS-01,Metrics,Sync Results,Positive,High,"1. Trigger sync, 2. Check UI",Views/Likes/Comments updated
+P2-NEG-01,Metrics,Sync API Down,Negative,High,"1. Disable Network, 2. Trigger sync",Error "Provider Unavailable" logged
+P2-EDG-01,Metrics,Video with 0 Views,Edge,Low,"1. Sync new video with 0 stats",System records 0 correctly (not null/error)
+P2-POS-03,QC,Valid QC Check,Positive,High,"1. Finish render, 2. Run AI QC",QC report generated with "Passed"
+P2-NEG-03,QC,Audio Sync Failed,Negative,High,"1. Corrupt audio file, 2. Run QC",QC flags "Audio Error" and stops upload
+P2-EDG-03,QC,Missing Subtitles,Edge,Medium,"1. Render video without subs, 2. Run QC",QC warning "Subtitles missing" triggered
+P3-01-POS,Monetization,Affiliate Found,Positive,High,"1. Topic: Stoicism, 2. Find Link",Affiliate link for "Stoic Book" inserted
+P3-01-NEG,Monetization,No Product Found,Negative,Medium,"1. Topic: Unknown gibberish, 2. Find Link",Description remains clean without broken links
+P3-01-EDG,Monetization,Price Change detection,Edge,Low,"1. Product price updated in marketplace",System updates link or warns of mismatch
+P3-02-POS,Global,English Dubbing,Positive,High,"1. Select ID video, 2. Dub to EN",Audio generated in EN with same tone
+P3-02-NEG,Global,Unsupported Language,Negative,Medium,"1. Select Klingon language, 2. Dub",Error "Language not supported"
+P3-02-EDG,Global,Long Silence in Video,Edge,Low,"1. Video with 2 min silence, 2. Dub",Dubbing agent handles silence without looping
+P3-03-POS,Community,Reply to Comment,Positive,Medium,"1. Received: 'Nice video', 2. Reply",AI replies: 'Thanks for watching!'
+P3-03-NEG,Community,Spam Detection,Negative,Medium,"1. Received: 'Buy bitcoin here', 2. Reply",Agent ignores/blocks spam comment
+P3-03-EDG,Community,Emoji-only Comment,Edge,Low,"1. Received: '🔥', 2. Reply",Agent replies with relevant emoji
+P3-04-POS,Security,Proxy Rotation,Positive,High,"1. Upload Acc A & B, 2. Check IP",Each has different IP address
+P3-04-NEG,Security,Proxy Timeout,Negative,High,"1. Use dead proxy, 2. Upload",System retries with new proxy or fails gracefully
+P3-04-EDG,Security,IP Leaking Check,Edge,High,"1. Proxy fails mid-upload",System kills connection (Kill-switch) to prevent IP leak
+P3-05-POS,Recycle,Remix Viral Content,Positive,Medium,"1. Found video > 1M views, 2. Remix",New video rendered with different hook
+P3-05-NEG,Recycle,Copyright Flag on Old,Negative,High,"1. Video has strike, 2. Remix",System refuses to recycle flagged content
+P3-05-EDG,Recycle,Recursive Recycling,Edge,Low,"1. Attempt to recycle a recycled video",System identifies and limits recursion depth
+P4-01-POS,Repurpose,Video-to-Thread,Positive,Medium,"1. Input MP4, 2. Run Ollama",10-post X Thread generated
+P4-01-NEG,Repurpose,Ollama Offline,Negative,High,"1. Stop Ollama service, 2. Run",Error "Local LLM unreachable"
+P4-01-EDG,Repurpose,Empty Transcript,Edge,Medium,"1. Input silent video, 2. Run",System warns "No text to repurpose"
+P4-02-POS,A/B Test,Hook Testing,Positive,High,"1. Input 1 topic, 2. Render 3 hooks",3 distinct video files created
+P4-02-NEG,A/B Test,Render Queue Full,Negative,High,"1. Submit 100 AB tests, 2. Check",System throttles and prioritizes correctly
+P4-02-EDG,A/B Test,Identical Hooks,Edge,Low,"1. Input same hook 3 times",System warns of duplicate test variants
+P4-04-POS,FinOps,Local LLM Routing,Positive,High,"1. Simple summary task, 2. Run",Task executed via local Ollama (Cost: $0)
+P4-04-NEG,FinOps,GPU Memory Full,Negative,High,"1. Run heavy model, 2. Memory full",System fallbacks to Gemini API (Paid) automatically
+P4-04-EDG,FinOps,Token Limit Edge,Edge,Medium,"1. Transcript > 100k tokens, 2. Run",System chunks the data for local LLM
+P4-05-POS,Legal,Auto Dispute,Positive,Medium,"1. Claim received, 2. Generate Appeal",Legal letter drafted with Fair Use arguments
+P4-05-NEG,Legal,Strike Immediate,Negative,High,"1. Account terminated, 2. Check",System halts all jobs for that account
+P4-05-EDG,Legal,Invalid Claim ID,Edge,Low,"1. Malformed claim notification, 2. Process",System logs "Unexpected notification format"

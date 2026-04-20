@@ -299,6 +299,10 @@ export default function Dashboard() {
 
     const startGeneration = async () => {
         try {
+            if (!topic.trim()) {
+                setStatusMessage("Topic is required");
+                return;
+            }
             setIsGenerating(true);
             setStatusMessage(null);
 
@@ -392,10 +396,11 @@ export default function Dashboard() {
 
                         <div className='grid gap-6 md:grid-cols-2 mb-8'>
                             <div className='space-y-2'>
-                                <label className='text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1'>
+                                <label htmlFor="niche-input" className='text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1'>
                                     Niche Architecture
                                 </label>
                                 <input
+                                    id="niche-input"
                                     value={niche}
                                     onChange={(e) => setNiche(e.target.value)}
                                     className='w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-4 text-white font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'
@@ -403,10 +408,11 @@ export default function Dashboard() {
                                 />
                             </div>
                             <div className='space-y-2'>
-                                <label className='text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1'>
+                                <label htmlFor="topic-input" className='text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1'>
                                     Content Concept
                                 </label>
                                 <input
+                                    id="topic-input"
                                     value={topic}
                                     onChange={(e) => setTopic(e.target.value)}
                                     className='w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-4 text-white font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'
@@ -607,7 +613,10 @@ export default function Dashboard() {
                         </button>
 
                         {statusMessage && (
-                            <div className='mt-6 rounded-2xl border border-blue-500/20 bg-blue-500/10 px-6 py-4 text-xs font-bold text-blue-400 text-center animate-bounce'>
+                            <div 
+                                data-testid="status-message"
+                                className='mt-6 rounded-2xl border border-blue-500/20 bg-blue-500/10 px-6 py-4 text-xs font-bold text-blue-400 text-center animate-bounce'
+                            >
                                 {statusMessage}
                             </div>
                         )}
