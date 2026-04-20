@@ -12,8 +12,9 @@ import (
 )
 
 type GeneratorService struct {
-	writer    ports.ScriptWriter
-	voice     ports.VoiceGenerator
+	writer      ports.ScriptWriter
+	codexWriter ports.ScriptWriter
+	voice       ports.VoiceGenerator
 	image     ports.ImageGenerator
 	assembler ports.VideoAssembler
 	uploader  ports.Uploader
@@ -22,16 +23,17 @@ type GeneratorService struct {
 	quality   *QualityControlService
 }
 
-func NewGeneratorService(w ports.ScriptWriter, v ports.VoiceGenerator, i ports.ImageGenerator, a ports.VideoAssembler, u ports.Uploader, branding *BrandingService, affiliate *AffiliateService, qc *QualityControlService) *GeneratorService {
+func NewGeneratorService(w ports.ScriptWriter, cw ports.ScriptWriter, v ports.VoiceGenerator, i ports.ImageGenerator, a ports.VideoAssembler, u ports.Uploader, branding *BrandingService, affiliate *AffiliateService, qc *QualityControlService) *GeneratorService {
 	return &GeneratorService{
-		writer:    w,
-		voice:     v,
-		image:     i,
-		assembler: a,
-		uploader:  u,
-		branding:  branding,
-		affiliate: affiliate,
-		quality:   qc,
+		writer:      w,
+		codexWriter: cw,
+		voice:       v,
+		image:       i,
+		assembler:   a,
+		uploader:    u,
+		branding:    branding,
+		affiliate:   affiliate,
+		quality:     qc,
 	}
 }
 
@@ -105,10 +107,17 @@ func (s *GeneratorService) GenerateContent(ctx context.Context, niche string, to
 }
 
 func (s *GeneratorService) generateAttempt(ctx context.Context, niche string, topic string) (*domain.Story, func(), error) {
-	// 1. Write Script & Scene Plan
+	// 1. Write Script & Scene Plan - with Fallback
 	story, err := s.writer.WriteScript(ctx, niche, topic)
 	if err != nil {
-		return nil, nil, fmt.Errorf("script writer: %v", err)
+		log.Printf("Gemini failed: %v. Attempting Codex fallback...\n", err)
+		if s.codexWriter != nil {
+			story, err = s.codexWriter.WriteScript(ctx, niche, topic)
+		}
+		
+		if err != nil {
+			return nil, nil, fmt.Errorf("script writer (Gemini & Codex): %v", err)
+		}
 	}
 	log.Printf("Script generated: %s\n", story.Title)
 

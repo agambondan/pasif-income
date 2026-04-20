@@ -253,7 +253,7 @@ func (s *QualityControlService) reviewWithGemini(ctx context.Context, story *dom
 	}
 	defer client.Close()
 
-	model := client.GenerativeModel("gemini-1.5-pro")
+	model := client.GenerativeModel("gemini-2.5-pro")
 	model.ResponseMIMEType = "application/json"
 
 	prompt := buildQCReviewPrompt(story, base)
