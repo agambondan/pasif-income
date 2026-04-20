@@ -246,12 +246,12 @@ func browserTargetURL(platformID string) string {
 		if url := strings.TrimSpace(os.Getenv("TIKTOK_UPLOAD_URL")); url != "" {
 			return url
 		}
-		return "https://www.tiktok.com/upload"
+		return "https://www.tiktok.com/upload?lang=en"
 	case "instagram":
 		if url := strings.TrimSpace(os.Getenv("INSTAGRAM_UPLOAD_URL")); url != "" {
 			return url
 		}
-		return "https://www.instagram.com"
+		return "https://www.instagram.com/create/select/"
 	default:
 		return ""
 	}
@@ -446,13 +446,15 @@ func uploadActionTerms(platformID string) []string {
 		return []string{
 			"Create",
 			"Upload videos",
+			"Create upload",
+			"Create new video",
 			"Select files",
 			"Upload",
 		}
 	case "tiktok":
-		return []string{"Upload", "Select file", "Choose file", "Post"}
+		return []string{"Upload", "Select file", "Choose file", "Post", "Import", "Add video"}
 	case "instagram":
-		return []string{"New post", "Select from computer", "Choose from computer", "Create new"}
+		return []string{"New post", "Select from computer", "Choose from computer", "Create new", "Create", "Next"}
 	default:
 		return []string{"Upload", "Select file"}
 	}
@@ -461,11 +463,11 @@ func uploadActionTerms(platformID string) []string {
 func publishActionTerms(platformID string) []string {
 	switch platformID {
 	case "youtube":
-		return []string{"Publish", "Done", "Next"}
+		return []string{"Publish", "Done", "Next", "Save", "Visibility"}
 	case "tiktok":
-		return []string{"Post", "Publish", "Continue"}
+		return []string{"Post", "Publish", "Continue", "Upload"}
 	case "instagram":
-		return []string{"Share", "Publish", "Next"}
+		return []string{"Share", "Publish", "Next", "Continue", "Share now"}
 	default:
 		return []string{"Publish", "Share", "Post"}
 	}
@@ -475,15 +477,29 @@ func titleSelectors(platformID string) []string {
 	switch platformID {
 	case "youtube":
 		return []string{
+			"textarea#title-textarea",
+			"input#title-textarea",
+			"textarea[aria-label*='Add a title']",
+			"input[aria-label*='Add a title']",
 			"input[aria-label*='title']",
 			"textarea[aria-label*='title']",
-			"input#title-textarea",
-			"textarea#title-textarea",
+			"input[name='title']",
 		}
 	case "tiktok":
-		return []string{"input[placeholder*='title']", "textarea[placeholder*='title']", "input[type='text']"}
+		return []string{
+			"input[placeholder*='title']",
+			"textarea[placeholder*='title']",
+			"input[aria-label*='title']",
+			"textarea[aria-label*='title']",
+			"input[type='text']",
+		}
 	case "instagram":
-		return []string{"textarea[placeholder*='Write a caption']", "textarea[placeholder*='caption']", "textarea"}
+		return []string{
+			"textarea[placeholder*='Write a caption']",
+			"textarea[placeholder*='caption']",
+			"textarea[aria-label*='caption']",
+			"textarea",
+		}
 	default:
 		return []string{"input[aria-label*='title']", "textarea[aria-label*='title']", "textarea"}
 	}
@@ -493,14 +509,17 @@ func descriptionSelectors(platformID string) []string {
 	switch platformID {
 	case "youtube":
 		return []string{
-			"textarea[aria-label*='description']",
+			"ytcp-social-suggestions-textbox#description-textarea",
 			"textarea#description-textarea",
+			"textarea[aria-label*='Tell viewers about your video']",
+			"textarea[aria-label*='description']",
+			"textarea[placeholder*='description']",
 			"textarea",
 		}
 	case "tiktok":
-		return []string{"textarea[placeholder*='description']", "textarea"}
+		return []string{"textarea[placeholder*='description']", "textarea[aria-label*='description']", "textarea"}
 	case "instagram":
-		return []string{"textarea[placeholder*='caption']", "textarea"}
+		return []string{"textarea[placeholder*='caption']", "textarea[aria-label*='caption']", "textarea"}
 	default:
 		return []string{"textarea[aria-label*='description']", "textarea"}
 	}
@@ -510,22 +529,28 @@ func uploadFileSelectors(platformID string) []string {
 	base := []string{
 		"input[type=file]",
 		"input[name=file]",
+		"input[type='file'][accept*='video']",
 	}
 	switch platformID {
 	case "youtube":
 		return append([]string{
 			"input[type=file]",
 			"input[accept*='video']",
+			"input[accept*='video/*']",
+			"input[type='file'][multiple]",
 		}, base...)
 	case "tiktok":
 		return append([]string{
 			"input[type=file]",
 			"input[accept*='video']",
+			"input[accept*='video/*']",
 		}, base...)
 	case "instagram":
 		return append([]string{
 			"input[type=file]",
 			"input[accept*='video']",
+			"input[accept*='image']",
+			"input[accept*='video/*']",
 		}, base...)
 	default:
 		return base

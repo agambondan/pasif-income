@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-// Mocks
-type mockScriptWriter struct {
+// Fakes
+type fakeScriptWriter struct {
 	err error
 }
 
-func (m *mockScriptWriter) WriteScript(ctx context.Context, niche string, topic string) (*domain.Story, error) {
+func (m *fakeScriptWriter) WriteScript(ctx context.Context, niche string, topic string) (*domain.Story, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -23,54 +23,54 @@ func (m *mockScriptWriter) WriteScript(ctx context.Context, niche string, topic 
 	}, nil
 }
 
-type mockVoiceGenerator struct {
+type fakeVoiceGenerator struct {
 	err error
 }
 
-func (m *mockVoiceGenerator) GenerateVO(ctx context.Context, text string) (string, error) {
+func (m *fakeVoiceGenerator) GenerateVO(ctx context.Context, text string) (string, error) {
 	if m.err != nil {
 		return "", m.err
 	}
 	return "voice.mp3", nil
 }
 
-type mockImageGenerator struct {
+type fakeImageGenerator struct {
 	err error
 }
 
-func (m *mockImageGenerator) GenerateImage(ctx context.Context, prompt string, sceneID int) (string, error) {
+func (m *fakeImageGenerator) GenerateImage(ctx context.Context, prompt string, sceneID int) (string, error) {
 	if m.err != nil {
 		return "", m.err
 	}
 	return "image.png", nil
 }
 
-type mockVideoAssembler struct {
+type fakeVideoAssembler struct {
 	err error
 }
 
-func (m *mockVideoAssembler) Assemble(ctx context.Context, story *domain.Story) (string, error) {
+func (m *fakeVideoAssembler) Assemble(ctx context.Context, story *domain.Story) (string, error) {
 	if m.err != nil {
 		return "", m.err
 	}
 	return "video.mp4", nil
 }
 
-type mockUploader struct {
+type fakeUploader struct {
 	err error
 }
 
-func (m *mockUploader) Upload(ctx context.Context, filePath string, title string, description string) error {
+func (m *fakeUploader) Upload(ctx context.Context, filePath string, title string, description string) error {
 	return m.err
 }
 
 func TestGenerateContent_Success(t *testing.T) {
 	s := NewGeneratorService(
-		&mockScriptWriter{},
-		&mockVoiceGenerator{},
-		&mockImageGenerator{},
-		&mockVideoAssembler{},
-		&mockUploader{},
+		&fakeScriptWriter{},
+		&fakeVoiceGenerator{},
+		&fakeImageGenerator{},
+		&fakeVideoAssembler{},
+		&fakeUploader{},
 	)
 
 	story, err := s.GenerateContent(context.Background(), "motivation", "discipline")
@@ -85,11 +85,11 @@ func TestGenerateContent_Success(t *testing.T) {
 func TestGenerateContent_ScriptError(t *testing.T) {
 	expectedErr := errors.New("failed to write script")
 	s := NewGeneratorService(
-		&mockScriptWriter{err: expectedErr},
-		&mockVoiceGenerator{},
-		&mockImageGenerator{},
-		&mockVideoAssembler{},
-		&mockUploader{},
+		&fakeScriptWriter{err: expectedErr},
+		&fakeVoiceGenerator{},
+		&fakeImageGenerator{},
+		&fakeVideoAssembler{},
+		&fakeUploader{},
 	)
 
 	_, err := s.GenerateContent(context.Background(), "motivation", "discipline")
