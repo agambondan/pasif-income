@@ -133,6 +133,7 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 			status_detail TEXT DEFAULT '',
 			external_id TEXT,
 			error TEXT,
+			scheduled_at TIMESTAMP NULL,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
@@ -143,9 +144,31 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 
 	_, err = db.Exec(`
 		ALTER TABLE distribution_jobs ADD COLUMN IF NOT EXISTS status_detail TEXT DEFAULT '';
+		ALTER TABLE distribution_jobs ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMP NULL;
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter distribution_jobs table: %v", err)
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS video_metric_snapshots (
+			id SERIAL PRIMARY KEY,
+			user_id INT REFERENCES users(id),
+			generation_job_id TEXT REFERENCES generation_jobs(id),
+			distribution_job_id INT REFERENCES distribution_jobs(id),
+			account_id TEXT REFERENCES connected_accounts(id),
+			platform TEXT NOT NULL,
+			niche TEXT DEFAULT '',
+			external_id TEXT NOT NULL,
+			video_title TEXT DEFAULT '',
+			view_count BIGINT DEFAULT 0,
+			like_count BIGINT DEFAULT 0,
+			comment_count BIGINT DEFAULT 0,
+			collected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create video_metric_snapshots table: %v", err)
 	}
 
 	return &PostgresRepository{db}, nil
@@ -164,6 +187,28 @@ func (r *PostgresRepository) GetUserByUsername(ctx context.Context, username str
 		return nil, err
 	}
 	return &u, nil
+}
+
+func (r *PostgresRepository) ListUsers(ctx context.Context) ([]domain.User, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, username, password_hash, created_at
+		FROM users
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := make([]domain.User, 0)
+	for rows.Next() {
+		var u domain.User
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
 }
 
 func (r *PostgresRepository) CreateSession(ctx context.Context, userID int) (string, error) {
@@ -198,6 +243,34 @@ func (r *PostgresRepository) GetUserBySessionToken(ctx context.Context, sessionT
 func (r *PostgresRepository) DeleteSession(ctx context.Context, sessionToken string) error {
 	_, err := r.db.ExecContext(ctx, "DELETE FROM sessions WHERE token = $1", sessionToken)
 	return err
+}
+
+func (r *PostgresRepository) ListAllConnectedAccounts(ctx context.Context) ([]domain.ConnectedAccount, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, user_id, platform_id, display_name, auth_method, COALESCE(email, ''), COALESCE(profile_path, ''), COALESCE(access_token, ''), COALESCE(refresh_token, ''), expiry, created_at
+		FROM connected_accounts
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	accs := make([]domain.ConnectedAccount, 0)
+	for rows.Next() {
+		var a domain.ConnectedAccount
+		if err := rows.Scan(&a.ID, &a.UserID, &a.PlatformID, &a.DisplayName, &a.AuthMethod, &a.Email, &a.ProfilePath, &a.AccessToken, &a.RefreshToken, &a.Expiry, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		if decryptedAt, err := crypto.Decrypt(a.AccessToken); err == nil {
+			a.AccessToken = decryptedAt
+		}
+		if decryptedRt, err := crypto.Decrypt(a.RefreshToken); err == nil {
+			a.RefreshToken = decryptedRt
+		}
+		accs = append(accs, a)
+	}
+	return accs, nil
 }
 
 func (r *PostgresRepository) ListConnectedAccounts(ctx context.Context, userID int) ([]domain.ConnectedAccount, error) {
@@ -285,15 +358,15 @@ func (r *PostgresRepository) DeleteConnectedAccount(ctx context.Context, account
 
 func (r *PostgresRepository) CreateDistributionJob(ctx context.Context, job *domain.DistributionJob) error {
 	err := r.db.QueryRowContext(ctx, `
-		INSERT INTO distribution_jobs (generation_job_id, account_id, platform, status, status_detail, external_id, error, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
-	`, job.GenerationJobID, job.AccountID, job.Platform, job.Status, nullString(job.StatusDetail), nullString(job.ExternalID), nullString(job.Error), job.CreatedAt, job.UpdatedAt).Scan(&job.ID)
+		INSERT INTO distribution_jobs (generation_job_id, account_id, platform, status, status_detail, external_id, error, scheduled_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
+	`, job.GenerationJobID, job.AccountID, job.Platform, job.Status, nullString(job.StatusDetail), nullString(job.ExternalID), nullString(job.Error), nullTimePtr(job.ScheduledAt), job.CreatedAt, job.UpdatedAt).Scan(&job.ID)
 	return err
 }
 
 func (r *PostgresRepository) ListDistributionJobs(ctx context.Context, generationJobID string) ([]domain.DistributionJob, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, generation_job_id, account_id, platform, status, COALESCE(status_detail, ''), COALESCE(external_id, ''), COALESCE(error, ''), created_at, updated_at
+		SELECT id, generation_job_id, account_id, platform, status, COALESCE(status_detail, ''), COALESCE(external_id, ''), COALESCE(error, ''), scheduled_at, created_at, updated_at
 		FROM distribution_jobs
 		WHERE generation_job_id = $1
 		ORDER BY created_at DESC
@@ -307,12 +380,16 @@ func (r *PostgresRepository) ListDistributionJobs(ctx context.Context, generatio
 	for rows.Next() {
 		var job domain.DistributionJob
 		var extID, errStr, detail string
-		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &job.CreatedAt, &job.UpdatedAt); err != nil {
+		var scheduledAt sql.NullTime
+		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &scheduledAt, &job.CreatedAt, &job.UpdatedAt); err != nil {
 			return nil, err
 		}
 		job.StatusDetail = detail
 		job.ExternalID = extID
 		job.Error = errStr
+		if scheduledAt.Valid {
+			job.ScheduledAt = &scheduledAt.Time
+		}
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
@@ -320,7 +397,7 @@ func (r *PostgresRepository) ListDistributionJobs(ctx context.Context, generatio
 
 func (r *PostgresRepository) ListAllDistributionJobs(ctx context.Context, userID int) ([]domain.DistributionJob, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT dj.id, dj.generation_job_id, dj.account_id, dj.platform, dj.status, COALESCE(dj.status_detail, ''), COALESCE(dj.external_id, ''), COALESCE(dj.error, ''), dj.created_at, dj.updated_at
+		SELECT dj.id, dj.generation_job_id, dj.account_id, dj.platform, dj.status, COALESCE(dj.status_detail, ''), COALESCE(dj.external_id, ''), COALESCE(dj.error, ''), dj.scheduled_at, dj.created_at, dj.updated_at
 		FROM distribution_jobs dj
 		JOIN connected_accounts ca ON ca.id = dj.account_id
 		WHERE ca.user_id = $1
@@ -335,12 +412,16 @@ func (r *PostgresRepository) ListAllDistributionJobs(ctx context.Context, userID
 	for rows.Next() {
 		var job domain.DistributionJob
 		var extID, errStr, detail string
-		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &job.CreatedAt, &job.UpdatedAt); err != nil {
+		var scheduledAt sql.NullTime
+		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &scheduledAt, &job.CreatedAt, &job.UpdatedAt); err != nil {
 			return nil, err
 		}
 		job.StatusDetail = detail
 		job.ExternalID = extID
 		job.Error = errStr
+		if scheduledAt.Valid {
+			job.ScheduledAt = &scheduledAt.Time
+		}
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
@@ -348,9 +429,9 @@ func (r *PostgresRepository) ListAllDistributionJobs(ctx context.Context, userID
 
 func (r *PostgresRepository) ListPendingDistributionJobs(ctx context.Context) ([]domain.DistributionJob, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, generation_job_id, account_id, platform, status, COALESCE(status_detail, ''), COALESCE(external_id, ''), COALESCE(error, ''), created_at, updated_at
+		SELECT id, generation_job_id, account_id, platform, status, COALESCE(status_detail, ''), COALESCE(external_id, ''), COALESCE(error, ''), scheduled_at, created_at, updated_at
 		FROM distribution_jobs
-		WHERE status = 'pending'
+		WHERE status = 'pending' AND (scheduled_at IS NULL OR scheduled_at <= CURRENT_TIMESTAMP)
 		ORDER BY created_at ASC
 	`)
 	if err != nil {
@@ -362,12 +443,16 @@ func (r *PostgresRepository) ListPendingDistributionJobs(ctx context.Context) ([
 	for rows.Next() {
 		var job domain.DistributionJob
 		var extID, errStr, detail string
-		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &job.CreatedAt, &job.UpdatedAt); err != nil {
+		var scheduledAt sql.NullTime
+		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &scheduledAt, &job.CreatedAt, &job.UpdatedAt); err != nil {
 			return nil, err
 		}
 		job.StatusDetail = detail
 		job.ExternalID = extID
 		job.Error = errStr
+		if scheduledAt.Valid {
+			job.ScheduledAt = &scheduledAt.Time
+		}
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
@@ -388,6 +473,82 @@ func (r *PostgresRepository) SaveClip(ctx context.Context, clip *domain.ClipSegm
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`, sourceID, s3Path, clip.Headline, clip.StartTime, clip.EndTime, clip.Score, clip.Reasoning)
 	return err
+}
+
+func (r *PostgresRepository) SaveVideoMetricSnapshot(ctx context.Context, snapshot *domain.VideoMetricSnapshot) error {
+	return r.db.QueryRowContext(ctx, `
+		INSERT INTO video_metric_snapshots (
+			user_id, generation_job_id, distribution_job_id, account_id, platform, external_id, video_title, view_count, like_count, comment_count, collected_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING id
+	`, snapshot.UserID, snapshot.GenerationJobID, snapshot.DistributionJobID, snapshot.AccountID, snapshot.Platform, snapshot.ExternalID, snapshot.VideoTitle, int64(snapshot.ViewCount), int64(snapshot.LikeCount), int64(snapshot.CommentCount), snapshot.CollectedAt).Scan(&snapshot.ID)
+}
+
+func (r *PostgresRepository) ListVideoMetricSnapshots(ctx context.Context, userID int) ([]domain.VideoMetricSnapshot, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, user_id, generation_job_id, distribution_job_id, account_id, platform, COALESCE(niche, ''), external_id, COALESCE(video_title, ''), COALESCE(view_count, 0), COALESCE(like_count, 0), COALESCE(comment_count, 0), collected_at
+		FROM video_metric_snapshots
+		WHERE user_id = $1
+		ORDER BY collected_at DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	snapshots := []domain.VideoMetricSnapshot{}
+	for rows.Next() {
+		var snap domain.VideoMetricSnapshot
+		var viewCount, likeCount, commentCount int64
+		if err := rows.Scan(&snap.ID, &snap.UserID, &snap.GenerationJobID, &snap.DistributionJobID, &snap.AccountID, &snap.Platform, &snap.Niche, &snap.ExternalID, &snap.VideoTitle, &viewCount, &likeCount, &commentCount, &snap.CollectedAt); err != nil {
+			return nil, err
+		}
+		if viewCount > 0 {
+			snap.ViewCount = uint64(viewCount)
+		}
+		if likeCount > 0 {
+			snap.LikeCount = uint64(likeCount)
+		}
+		if commentCount > 0 {
+			snap.CommentCount = uint64(commentCount)
+		}
+		snapshots = append(snapshots, snap)
+	}
+	return snapshots, nil
+}
+
+func (r *PostgresRepository) ListVideoMetricSnapshotsByJob(ctx context.Context, generationJobID string) ([]domain.VideoMetricSnapshot, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, user_id, generation_job_id, distribution_job_id, account_id, platform, COALESCE(niche, ''), external_id, COALESCE(video_title, ''), COALESCE(view_count, 0), COALESCE(like_count, 0), COALESCE(comment_count, 0), collected_at
+		FROM video_metric_snapshots
+		WHERE generation_job_id = $1
+		ORDER BY collected_at DESC
+	`, generationJobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	snapshots := []domain.VideoMetricSnapshot{}
+	for rows.Next() {
+		var snap domain.VideoMetricSnapshot
+		var viewCount, likeCount, commentCount int64
+		if err := rows.Scan(&snap.ID, &snap.UserID, &snap.GenerationJobID, &snap.DistributionJobID, &snap.AccountID, &snap.Platform, &snap.Niche, &snap.ExternalID, &snap.VideoTitle, &viewCount, &likeCount, &commentCount, &snap.CollectedAt); err != nil {
+			return nil, err
+		}
+		if viewCount > 0 {
+			snap.ViewCount = uint64(viewCount)
+		}
+		if likeCount > 0 {
+			snap.LikeCount = uint64(likeCount)
+		}
+		if commentCount > 0 {
+			snap.CommentCount = uint64(commentCount)
+		}
+		snapshots = append(snapshots, snap)
+	}
+	return snapshots, nil
 }
 
 func (r *PostgresRepository) UpdateStatus(ctx context.Context, clipID string, status string) error {

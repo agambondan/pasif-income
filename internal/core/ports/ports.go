@@ -28,6 +28,7 @@ type Repository interface {
 	UpdateDistributionJobStatus(ctx context.Context, jobID int, status string, statusDetail string, externalID string, errMsg string) error
 
 	// Users & Auth
+	ListUsers(ctx context.Context) ([]domain.User, error)
 	CreateUser(ctx context.Context, username, passwordHash string) error
 	GetUserByUsername(ctx context.Context, username string) (*domain.User, error)
 	CreateSession(ctx context.Context, userID int) (string, error)
@@ -35,10 +36,16 @@ type Repository interface {
 	DeleteSession(ctx context.Context, sessionToken string) error
 
 	// Platforms & Accounts
+	ListAllConnectedAccounts(ctx context.Context) ([]domain.ConnectedAccount, error)
 	ListConnectedAccounts(ctx context.Context, userID int) ([]domain.ConnectedAccount, error)
 	GetConnectedAccountByID(ctx context.Context, accountID string) (*domain.ConnectedAccount, error)
 	SaveConnectedAccount(ctx context.Context, acc *domain.ConnectedAccount) error
 	DeleteConnectedAccount(ctx context.Context, accountID string) error
+
+	// Analytics
+	SaveVideoMetricSnapshot(ctx context.Context, snapshot *domain.VideoMetricSnapshot) error
+	ListVideoMetricSnapshots(ctx context.Context, userID int) ([]domain.VideoMetricSnapshot, error)
+	ListVideoMetricSnapshotsByJob(ctx context.Context, generationJobID string) ([]domain.VideoMetricSnapshot, error)
 }
 
 // Creation Pipeline Ports (Faceless)

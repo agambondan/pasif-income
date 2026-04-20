@@ -45,5 +45,6 @@ This project automates the conversion of long-form videos into viral short-form 
 - `internal/adapters`: Implementations for third-party tools and APIs.
 - `scripts`: Helper scripts (e.g., face tracking).
 - `docs/distribution-matrix.md`: Current target model for publish destinations and dashboard traceability.
+- `docs/metrics.md`: Analytics snapshot flow and dashboard metrics model.
 - `docs/platform-auth.md`: API-first plus Chromium-profile browser fallback for linking upload accounts.
 - `docs/implementation-status.md`: Current implementation snapshot and next work order.

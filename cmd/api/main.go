@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,9 +24,12 @@ import (
 )
 
 type generateRequest struct {
-	Niche        string               `json:"niche"`
-	Topic        string               `json:"topic"`
-	Destinations []domain.Destination `json:"destinations"`
+	Niche            string               `json:"niche"`
+	Topic            string               `json:"topic"`
+	Destinations     []domain.Destination `json:"destinations"`
+	ScheduleMode     string               `json:"schedule_mode"`
+	DripIntervalDays int                  `json:"drip_interval_days"`
+	StartAt          string               `json:"start_at"`
 }
 
 type apiServer struct {
@@ -34,6 +38,7 @@ type apiServer struct {
 	generator *services.GeneratorService
 	auth      *services.AuthService
 	platform  *services.PlatformService
+	metrics   *services.MetricsService
 }
 
 func main() {
@@ -56,6 +61,7 @@ func main() {
 		storage:  storage,
 		auth:     services.NewAuthService(repo),
 		platform: services.NewPlatformService(repo),
+		metrics:  services.NewMetricsService(repo),
 	}
 
 	generator, err := newGeneratorServiceFromEnv()
@@ -77,6 +83,7 @@ func main() {
 	if repo != nil {
 		publisherWorker := services.NewPublisherService(repo, newPublisherFromEnv())
 		go publisherWorker.StartWorker(context.Background())
+		go api.metrics.StartWorker(context.Background())
 	}
 
 	mux := http.NewServeMux()
@@ -90,6 +97,8 @@ func main() {
 	mux.HandleFunc("/api/accounts/", api.deleteAccountHandler)
 	mux.HandleFunc("/api/auth/", api.oauthHandler)
 	mux.HandleFunc("/api/videos", api.videosHandler)
+	mux.HandleFunc("/api/metrics", api.metricsHandler)
+	mux.HandleFunc("/api/metrics/sync", api.metricsSyncHandler)
 	mux.HandleFunc("/api/clips", api.clipsHandler)
 	mux.HandleFunc("/api/generate", api.generateHandler)
 	mux.HandleFunc("/api/publish/history", api.publishHistoryHandler)
@@ -438,6 +447,7 @@ func youtubeOAuthScopes() []string {
 	if raw == "" {
 		return []string{
 			"https://www.googleapis.com/auth/youtube.upload",
+			"https://www.googleapis.com/auth/youtube.readonly",
 			"https://www.googleapis.com/auth/userinfo.email",
 			"https://www.googleapis.com/auth/userinfo.profile",
 			"openid",
@@ -496,7 +506,7 @@ func youtubeAuthURL(state string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce), nil
+	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce, oauth2.SetAuthURLParam("include_granted_scopes", "true")), nil
 }
 
 func randomOAuthState() (string, error) {
@@ -529,6 +539,111 @@ func (a *apiServer) videosHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, files)
+}
+
+type metricsSummary struct {
+	TotalVideos       int        `json:"total_videos"`
+	TotalViews        uint64     `json:"total_views"`
+	TotalLikes        uint64     `json:"total_likes"`
+	TotalComments     uint64     `json:"total_comments"`
+	LatestCollectedAt *time.Time `json:"latest_collected_at,omitempty"`
+}
+
+type metricsResponse struct {
+	Summary metricsSummary               `json:"summary"`
+	Latest  []domain.VideoMetricSnapshot `json:"latest"`
+	History []domain.VideoMetricSnapshot `json:"history"`
+}
+
+func (a *apiServer) metricsHandler(w http.ResponseWriter, r *http.Request) {
+	if a.repo == nil {
+		http.Error(w, "repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	history, err := a.repo.ListVideoMetricSnapshots(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	latest := collapseLatestMetricSnapshots(history)
+	summary := summarizeMetrics(latest)
+	writeJSON(w, http.StatusOK, metricsResponse{
+		Summary: summary,
+		Latest:  latest,
+		History: history,
+	})
+}
+
+func (a *apiServer) metricsSyncHandler(w http.ResponseWriter, r *http.Request) {
+	if a.repo == nil || a.metrics == nil {
+		http.Error(w, "metrics unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	synced, err := a.metrics.SyncUser(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"synced": synced,
+	})
+}
+
+func collapseLatestMetricSnapshots(history []domain.VideoMetricSnapshot) []domain.VideoMetricSnapshot {
+	seen := make(map[string]struct{})
+	latest := make([]domain.VideoMetricSnapshot, 0, len(history))
+	for _, snap := range history {
+		if _, ok := seen[snap.ExternalID]; ok {
+			continue
+		}
+		seen[snap.ExternalID] = struct{}{}
+		latest = append(latest, snap)
+	}
+	return latest
+}
+
+func summarizeMetrics(latest []domain.VideoMetricSnapshot) metricsSummary {
+	var summary metricsSummary
+	summary.TotalVideos = len(latest)
+	for i, snap := range latest {
+		summary.TotalViews += snap.ViewCount
+		summary.TotalLikes += snap.LikeCount
+		summary.TotalComments += snap.CommentCount
+		if i == 0 {
+			collected := snap.CollectedAt
+			summary.LatestCollectedAt = &collected
+			continue
+		}
+		if summary.LatestCollectedAt == nil || snap.CollectedAt.After(*summary.LatestCollectedAt) {
+			collected := snap.CollectedAt
+			summary.LatestCollectedAt = &collected
+		}
+	}
+	return summary
 }
 
 func newGeneratorServiceFromEnv() (*services.GeneratorService, error) {
@@ -678,7 +793,7 @@ func (a *apiServer) generateHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		go a.runGeneration(userID, job.ID, niche, topic, req.Destinations)
+		go a.runGeneration(userID, job.ID, niche, topic, req.Destinations, req.ScheduleMode, req.DripIntervalDays, req.StartAt)
 
 		writeJSON(w, http.StatusAccepted, job)
 	default:
@@ -835,7 +950,7 @@ func (a *apiServer) publishHistoryHandler(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, jobs)
 }
 
-func (a *apiServer) runGeneration(userID int, jobID, niche, topic string, destinations []domain.Destination) {
+func (a *apiServer) runGeneration(userID int, jobID, niche, topic string, destinations []domain.Destination, scheduleMode string, dripIntervalDays int, startAt string) {
 	if a.repo != nil {
 		if err := a.repo.UpdateJobStatus(context.Background(), jobID, "running", ""); err != nil {
 			log.Printf("failed to mark job running: %v\n", err)
@@ -870,7 +985,7 @@ func (a *apiServer) runGeneration(userID int, jobID, niche, topic string, destin
 
 	// Create distribution jobs if successful
 	if a.repo != nil {
-		for _, dest := range destinations {
+		for i, dest := range destinations {
 			account, err := a.repo.GetConnectedAccountByID(ctx, dest.AccountID)
 			if err != nil {
 				log.Printf("failed to load account %s: %v\n", dest.AccountID, err)
@@ -891,6 +1006,7 @@ func (a *apiServer) runGeneration(userID int, jobID, niche, topic string, destin
 				Platform:        dest.Platform,
 				Status:          "pending",
 				StatusDetail:    "queued",
+				ScheduledAt:     computeScheduledAt(scheduleMode, dripIntervalDays, startAt, i),
 				CreatedAt:       time.Now(),
 				UpdatedAt:       time.Now(),
 			}
@@ -903,6 +1019,77 @@ func (a *apiServer) runGeneration(userID int, jobID, niche, topic string, destin
 			log.Printf("failed to mark job completed: %v\n", err)
 		}
 	}
+}
+
+func computeScheduledAt(scheduleMode string, dripIntervalDays int, startAt string, index int) *time.Time {
+	mode := strings.TrimSpace(strings.ToLower(scheduleMode))
+	if mode == "" || mode == "immediate" {
+		return nil
+	}
+
+	loc := schedulingLocation()
+	now := time.Now().In(loc)
+	base := now
+	if parsed, err := parseScheduleTime(startAt, loc); err == nil {
+		base = parsed
+	} else {
+		base = nextPrimeTime(now, loc)
+	}
+
+	if dripIntervalDays < 1 {
+		dripIntervalDays = 1
+	}
+
+	switch mode {
+	case "prime_time":
+		scheduled := base.AddDate(0, 0, index)
+		return &scheduled
+	case "drip_feed":
+		scheduled := base.AddDate(0, 0, index*dripIntervalDays)
+		return &scheduled
+	default:
+		return nil
+	}
+}
+
+func parseScheduleTime(raw string, loc *time.Location) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, fmt.Errorf("empty schedule time")
+	}
+	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
+		return parsed.In(loc), nil
+	}
+	if parsed, err := time.ParseInLocation("2006-01-02 15:04", raw, loc); err == nil {
+		return parsed, nil
+	}
+	return time.Time{}, fmt.Errorf("invalid schedule time")
+}
+
+func nextPrimeTime(now time.Time, loc *time.Location) time.Time {
+	hour := 19
+	if raw := strings.TrimSpace(os.Getenv("PRIME_UPLOAD_HOUR")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 23 {
+			hour = parsed
+		}
+	}
+
+	candidate := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, loc)
+	if !candidate.After(now) {
+		candidate = candidate.AddDate(0, 0, 1)
+	}
+	return candidate
+}
+
+func schedulingLocation() *time.Location {
+	tz := strings.TrimSpace(os.Getenv("SCHEDULING_TIMEZONE"))
+	if tz == "" {
+		return time.Local
+	}
+	if loc, err := time.LoadLocation(tz); err == nil {
+		return loc
+	}
+	return time.Local
 }
 
 func (a *apiServer) currentUserID(r *http.Request) (int, error) {

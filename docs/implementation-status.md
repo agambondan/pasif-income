@@ -35,6 +35,7 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 - Session-based dashboard auth sudah aktif via cookie backend.
 - Chromium profile provisioning sudah aktif per platform/email.
 - Distribution worker sudah memproses pending `distribution_jobs`.
+- Metrics worker sudah melakukan sync snapshot metrik YouTube ke Postgres.
 - Publisher adapter sudah punya:
   - YouTube API path
   - Chromium profile fallback
@@ -42,24 +43,24 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 ## Current Notes
 
 - OAuth connect untuk Chromium profile sudah membuat profile path nyata dan mengikat ke session user.
-- YouTube API connect sekarang memakai OAuth redirect + token exchange.
-- `distribution_jobs` masih diproses dengan worker polling sederhana, belum queue/broker terpisah.
+- YouTube API connect sekarang memakai OAuth redirect + token exchange, dengan scope read untuk analytics.
+- Dashboard videos sekarang punya panel analytics metrik dasar.
+- `distribution_jobs` dan metrics masih diproses dengan worker polling sederhana, belum queue/broker terpisah.
 
 ## Not Started
 
-- token refresh dan revoke flow untuk provider lain di luar YouTube
 - retry/failover per destination
-- publish history di UI
 - platform-specific upload adapter yang benar-benar real
 - Chromium browser automation yang benar-benar menekan UI platform
+- chart growth analytics per niche atau per video
 
 ## Recommended Next Order
 
-1. Token refresh dan revoke flow.
-2. Retry/failover per destination.
-3. Real browser automation per platform.
-4. Publish history di UI.
-5. UI checkbox platform dan account yang sudah connected.
+1. Retry/failover per destination.
+2. Real browser automation per platform.
+3. Chart growth analytics per niche atau per video.
+4. UI checkbox platform dan account yang sudah connected.
+5. Smart scheduling untuk drip feed upload.
 
 ## Related Docs
 

@@ -62,6 +62,23 @@ CREATE TABLE IF NOT EXISTS distribution_jobs (
     status_detail TEXT DEFAULT '',
     external_id TEXT,
     error TEXT,
+    scheduled_at TIMESTAMP NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS video_metric_snapshots (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    generation_job_id TEXT REFERENCES generation_jobs(id),
+    distribution_job_id INT REFERENCES distribution_jobs(id),
+    account_id TEXT REFERENCES connected_accounts(id),
+    platform TEXT NOT NULL,
+    niche TEXT DEFAULT '',
+    external_id TEXT NOT NULL,
+    video_title TEXT DEFAULT '',
+    view_count BIGINT DEFAULT 0,
+    like_count BIGINT DEFAULT 0,
+    comment_count BIGINT DEFAULT 0,
+    collected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

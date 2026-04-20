@@ -31,6 +31,7 @@ type DistributionJob = {
   status_detail: string;
   external_id: string;
   error: string;
+  scheduled_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -44,7 +45,10 @@ const jobStatusStyles: Record<GenerationJob['status'], string> = {
   failed: 'bg-red-500/15 text-red-300 border-red-500/30',
 };
 
-function formatTime(value: string) {
+function formatTime(value?: string | null) {
+  if (!value) {
+    return '-';
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
@@ -62,6 +66,8 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState('Never');
   const [niche, setNiche] = useState('stoicism');
   const [topic, setTopic] = useState('how to control your mind');
+  const [scheduleMode, setScheduleMode] = useState<'immediate' | 'drip_feed' | 'prime_time'>('immediate');
+  const [dripIntervalDays, setDripIntervalDays] = useState(1);
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
@@ -202,7 +208,13 @@ export default function Dashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ niche, topic, destinations }),
+        body: JSON.stringify({
+          niche,
+          topic,
+          destinations,
+          schedule_mode: scheduleMode,
+          drip_interval_days: dripIntervalDays,
+        }),
       });
       if (!res.ok) {
         const text = await res.text();
@@ -274,6 +286,33 @@ export default function Dashboard() {
               </div>
             </div>
 
+            <div className="grid gap-6 md:grid-cols-2 mb-8">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">Scheduling Mode</label>
+                <select
+                  value={scheduleMode}
+                  onChange={(e) => setScheduleMode(e.target.value as typeof scheduleMode)}
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-4 text-white font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                >
+                  <option value="immediate">Immediate</option>
+                  <option value="drip_feed">Drip Feed</option>
+                  <option value="prime_time">Prime Time</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">Drip Interval Days</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={dripIntervalDays}
+                  onChange={(e) => setDripIntervalDays(Number(e.target.value) || 1)}
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-4 text-white font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                  placeholder="1"
+                />
+              </div>
+            </div>
+
             {accounts.length > 0 && (
               <div className="mb-10">
                 <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1 block mb-4 text-center">Distribution Matrix</span>
@@ -336,11 +375,16 @@ export default function Dashboard() {
                 onClick={() => handleSelectJob(job.id)}
                 className={`rounded-2xl border bg-black/40 p-5 transition-all group/job cursor-pointer ${selectedJobId === job.id ? 'border-emerald-500/40 shadow-lg shadow-emerald-500/5' : 'border-white/5 hover:border-white/20'}`}
               >
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <div>
-                    <p className="font-black text-white text-sm group-hover:text-blue-400 transition-colors uppercase tracking-tight">{job.niche}</p>
-                    <p className="text-xs text-zinc-500 font-medium line-clamp-1 mt-1 uppercase tracking-widest">{job.topic}</p>
-                  </div>
+                    <div className="flex items-start justify-between gap-4 mb-3">
+                      <div>
+                        <p className="font-black text-white text-sm group-hover:text-blue-400 transition-colors uppercase tracking-tight">{job.niche}</p>
+                        <p className="text-xs text-zinc-500 font-medium line-clamp-1 mt-1 uppercase tracking-widest">{job.topic}</p>
+                        {job.scheduled_at && (
+                          <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mt-2">
+                            Scheduled {formatTime(job.scheduled_at)}
+                          </p>
+                        )}
+                      </div>
                   <span className={`rounded-lg border px-2 py-1 text-[9px] font-black uppercase tracking-widest shadow-sm ${jobStatusStyles[job.status]}`}>
                     {job.status}
                   </span>
@@ -387,6 +431,12 @@ export default function Dashboard() {
                       <div className="space-y-1">
                         <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Stage</p>
                         <p className="text-xs text-zinc-300 break-all">{dist.status_detail || '-'}</p>
+                        {dist.scheduled_at && (
+                          <>
+                            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-2">Scheduled</p>
+                            <p className="text-xs text-zinc-300 break-all">{formatTime(dist.scheduled_at)}</p>
+                          </>
+                        )}
                         <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">External ID</p>
                         <p className="text-xs text-zinc-300 break-all">{dist.external_id || '-'}</p>
                         {dist.error && <p className="text-xs text-red-400 break-all">{dist.error}</p>}

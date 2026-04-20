@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type DistributionJob = {
   id: number;
@@ -15,6 +15,36 @@ type DistributionJob = {
   updated_at: string;
 };
 
+type VideoMetricSnapshot = {
+  id: number;
+  user_id: number;
+  generation_job_id: string;
+  distribution_job_id: number;
+  account_id: string;
+  platform: string;
+  niche: string;
+  external_id: string;
+  video_title: string;
+  view_count: number;
+  like_count: number;
+  comment_count: number;
+  collected_at: string;
+};
+
+type MetricsSummary = {
+  total_videos: number;
+  total_views: number;
+  total_likes: number;
+  total_comments: number;
+  latest_collected_at?: string | null;
+};
+
+type MetricsResponse = {
+  summary: MetricsSummary;
+  latest: VideoMetricSnapshot[];
+  history: VideoMetricSnapshot[];
+};
+
 function formatTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -23,10 +53,130 @@ function formatTime(value: string) {
   return date.toLocaleString();
 }
 
+function formatNumber(value: number) {
+  return new Intl.NumberFormat('en-US').format(value || 0);
+}
+
+type TrendPoint = {
+  date: string;
+  value: number;
+};
+
+type TrendSeries = {
+  label: string;
+  total: number;
+  points: TrendPoint[];
+  color: string;
+};
+
+function colorForIndex(index: number) {
+  const colors = ['#10b981', '#3b82f6', '#f59e0b', '#f97316', '#8b5cf6'];
+  return colors[index % colors.length];
+}
+
+function buildTrendSeries(items: VideoMetricSnapshot[], keyFn: (item: VideoMetricSnapshot) => string) {
+  const grouped = new Map<string, Map<string, VideoMetricSnapshot>>();
+
+  for (const item of items) {
+    const label = keyFn(item).trim();
+    if (!label) continue;
+    const date = item.collected_at.slice(0, 10);
+    const labelMap = grouped.get(label) || new Map<string, VideoMetricSnapshot>();
+    const existing = labelMap.get(`${date}:${item.external_id}`);
+    if (!existing || new Date(item.collected_at).getTime() >= new Date(existing.collected_at).getTime()) {
+      labelMap.set(`${date}:${item.external_id}`, item);
+    }
+    grouped.set(label, labelMap);
+  }
+
+  const series: TrendSeries[] = [];
+  Array.from(grouped.entries()).forEach(([label, map], index) => {
+    const pointsByDate = new Map<string, number>();
+    map.forEach((snap) => {
+      const date = snap.collected_at.slice(0, 10);
+      pointsByDate.set(date, (pointsByDate.get(date) || 0) + snap.view_count);
+    });
+    const points = Array.from(pointsByDate.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, value]) => ({ date, value }));
+    if (points.length === 0) return;
+    series.push({
+      label,
+      total: points[points.length - 1]?.value || 0,
+      points,
+      color: colorForIndex(index),
+    });
+  });
+
+  return series.sort((a, b) => b.total - a.total);
+}
+
+function Sparkline({ points, color }: { points: TrendPoint[]; color: string }) {
+  if (points.length === 0) {
+    return <div className="h-24 rounded-2xl border border-dashed border-white/5" />;
+  }
+
+  const width = 320;
+  const height = 96;
+  const min = Math.min(...points.map((p) => p.value));
+  const max = Math.max(...points.map((p) => p.value));
+  const span = max - min || 1;
+  const step = points.length > 1 ? width / (points.length - 1) : width;
+  const coords = points.map((point, index) => {
+    const x = index * step;
+    const y = height - ((point.value - min) / span) * (height - 16) - 8;
+    return `${x},${y}`;
+  });
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full overflow-visible">
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={coords.join(' ')}
+      />
+      {coords.map((coord, index) => {
+        const [x, y] = coord.split(',');
+        return <circle key={`${coord}-${index}`} cx={Number(x)} cy={Number(y)} r="3.5" fill={color} />;
+      })}
+    </svg>
+  );
+}
+
 export default function VideoLibrary() {
   const [videos, setVideos] = useState<string[]>([]);
   const [publishHistory, setPublishHistory] = useState<DistributionJob[]>([]);
+  const [metricsSummary, setMetricsSummary] = useState<MetricsSummary | null>(null);
+  const [metricsLatest, setMetricsLatest] = useState<VideoMetricSnapshot[]>([]);
+  const [metricsHistory, setMetricsHistory] = useState<VideoMetricSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSyncingMetrics, setIsSyncingMetrics] = useState(false);
+
+  const nicheTrendSeries = useMemo(() => {
+    return buildTrendSeries(metricsHistory, (item) => item.niche || item.platform || 'unknown').slice(0, 3);
+  }, [metricsHistory]);
+
+  const videoTrendSeries = useMemo(() => {
+    return buildTrendSeries(metricsHistory, (item) => item.video_title || item.external_id || 'unknown').slice(0, 3);
+  }, [metricsHistory]);
+
+  const fetchMetrics = useCallback(async () => {
+    try {
+      const res = await fetch('/api/metrics', { credentials: 'include' });
+      if (!res.ok) {
+        return;
+      }
+      const data = (await res.json()) as MetricsResponse;
+      setMetricsSummary(data.summary || null);
+      setMetricsLatest(data.latest || []);
+      setMetricsHistory(data.history || []);
+    } catch (err) {
+      console.error('Failed to fetch metrics:', err);
+    }
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -45,6 +195,8 @@ export default function VideoLibrary() {
           const data = await historyRes.json();
           setPublishHistory(data || []);
         }
+
+        await fetchMetrics();
       } catch (err) {
         console.error('Failed to fetch data:', err);
       } finally {
@@ -52,7 +204,25 @@ export default function VideoLibrary() {
       }
     };
     fetchData();
-  }, []);
+  }, [fetchMetrics]);
+
+  const syncMetrics = async () => {
+    try {
+      setIsSyncingMetrics(true);
+      const res = await fetch('/api/metrics/sync', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      await fetchMetrics();
+    } catch (err) {
+      console.error('Failed to sync metrics:', err);
+    } finally {
+      setIsSyncingMetrics(false);
+    }
+  };
 
   return (
     <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
@@ -61,10 +231,183 @@ export default function VideoLibrary() {
           <h2 className="text-4xl font-black text-white tracking-tighter uppercase">VIDEO ARCHIVE</h2>
           <p className="text-zinc-500 mt-2 font-medium">Manage and review raw production assets in cold storage.</p>
         </div>
-        <div className="bg-zinc-900 border border-white/5 rounded-2xl px-6 py-3 text-xs font-bold text-zinc-500">
-            TOTAL ASSETS: {videos.length}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button
+            onClick={syncMetrics}
+            disabled={isSyncingMetrics}
+            className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-emerald-300 transition-all hover:bg-emerald-500/20 active:scale-95 disabled:opacity-50"
+          >
+            {isSyncingMetrics ? 'SYNCING METRICS...' : 'SYNC METRICS'}
+          </button>
+          <div className="bg-zinc-900 border border-white/5 rounded-2xl px-6 py-3 text-xs font-bold text-zinc-500">
+              TOTAL ASSETS: {videos.length}
+          </div>
         </div>
       </div>
+
+      <section className="grid gap-4 md:grid-cols-4">
+        <div className="rounded-3xl border border-white/5 bg-card p-6 shadow-xl">
+          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Tracked Videos</p>
+          <p className="mt-2 text-3xl font-black text-white">{metricsSummary ? formatNumber(metricsSummary.total_videos) : '0'}</p>
+        </div>
+        <div className="rounded-3xl border border-white/5 bg-card p-6 shadow-xl">
+          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Total Views</p>
+          <p className="mt-2 text-3xl font-black text-emerald-400">{metricsSummary ? formatNumber(metricsSummary.total_views) : '0'}</p>
+        </div>
+        <div className="rounded-3xl border border-white/5 bg-card p-6 shadow-xl">
+          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Total Likes</p>
+          <p className="mt-2 text-3xl font-black text-blue-400">{metricsSummary ? formatNumber(metricsSummary.total_likes) : '0'}</p>
+        </div>
+        <div className="rounded-3xl border border-white/5 bg-card p-6 shadow-xl">
+          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Total Comments</p>
+          <p className="mt-2 text-3xl font-black text-amber-400">{metricsSummary ? formatNumber(metricsSummary.total_comments) : '0'}</p>
+        </div>
+      </section>
+
+      <section className="grid gap-8 lg:grid-cols-2">
+        <div className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl">
+          <div className="mb-6">
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Growth Chart</p>
+            <h3 className="text-2xl font-black text-white uppercase tracking-tight">Views by Niche</h3>
+          </div>
+          <div className="space-y-5">
+            {nicheTrendSeries.length > 0 ? (
+              nicheTrendSeries.map((series) => (
+                <div key={series.label} className="rounded-2xl border border-white/5 bg-black/40 p-4">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div>
+                      <p className="text-sm font-black text-white uppercase tracking-tight">{series.label}</p>
+                      <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">{formatNumber(series.total)} total views</p>
+                    </div>
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: series.color }} />
+                  </div>
+                  <Sparkline points={series.points} color={series.color} />
+                </div>
+              ))
+            ) : (
+              <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No niche trend data yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl">
+          <div className="mb-6">
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Growth Chart</p>
+            <h3 className="text-2xl font-black text-white uppercase tracking-tight">Views by Video</h3>
+          </div>
+          <div className="space-y-5">
+            {videoTrendSeries.length > 0 ? (
+              videoTrendSeries.map((series) => (
+                <div key={series.label} className="rounded-2xl border border-white/5 bg-black/40 p-4">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div>
+                      <p className="text-sm font-black text-white uppercase tracking-tight line-clamp-1">{series.label}</p>
+                      <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">{formatNumber(series.total)} total views</p>
+                    </div>
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: series.color }} />
+                  </div>
+                  <Sparkline points={series.points} color={series.color} />
+                </div>
+              ))
+            ) : (
+              <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No video trend data yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl">
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Analytics</p>
+              <h3 className="text-2xl font-black text-white uppercase tracking-tight">Latest YouTube Metrics</h3>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Last Sync</p>
+              <p className="text-xs font-bold text-zinc-300">{metricsSummary?.latest_collected_at ? formatTime(metricsSummary.latest_collected_at) : 'Never'}</p>
+            </div>
+          </div>
+
+          {metricsLatest.length > 0 ? (
+            <div className="grid gap-4">
+              {metricsLatest.map((metric) => (
+                <div key={metric.id} className="rounded-2xl border border-white/5 bg-black/40 p-5">
+                  <div className="flex items-start justify-between gap-4 mb-3">
+                    <div>
+                      <p className="text-sm font-black text-white uppercase tracking-tight line-clamp-2">{metric.video_title || metric.external_id}</p>
+                      <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mt-1">
+                        {metric.platform} · {metric.account_id}
+                      </p>
+                    </div>
+                    <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-emerald-300">
+                      {formatTime(metric.collected_at)}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-xl border border-white/5 bg-black/30 p-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Views</p>
+                      <p className="mt-1 text-lg font-black text-emerald-400">{formatNumber(metric.view_count)}</p>
+                    </div>
+                    <div className="rounded-xl border border-white/5 bg-black/30 p-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Likes</p>
+                      <p className="mt-1 text-lg font-black text-blue-400">{formatNumber(metric.like_count)}</p>
+                    </div>
+                    <div className="rounded-xl border border-white/5 bg-black/30 p-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Comments</p>
+                      <p className="mt-1 text-lg font-black text-amber-400">{formatNumber(metric.comment_count)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
+              <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No metrics yet</p>
+              <p className="mt-2 text-zinc-500 text-sm">Sync completed YouTube API uploads to populate analytics.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl">
+          <div className="mb-6">
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Snapshot History</p>
+            <h3 className="text-2xl font-black text-white uppercase tracking-tight">Recent Samples</h3>
+          </div>
+          <div className="space-y-3 max-h-[620px] overflow-auto pr-2 custom-scrollbar">
+            {metricsHistory.length > 0 ? (
+              metricsHistory.slice(0, 20).map((snap) => (
+                <div key={snap.id} className="rounded-2xl border border-white/5 bg-black/40 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-white uppercase tracking-tight">{snap.video_title || snap.external_id}</p>
+                      <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+                        {snap.platform} · {snap.account_id}
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                      {formatTime(snap.collected_at)}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] font-black uppercase tracking-widest">
+                    <div className="rounded-xl border border-white/5 bg-black/30 p-3 text-emerald-400">V {formatNumber(snap.view_count)}</div>
+                    <div className="rounded-xl border border-white/5 bg-black/30 p-3 text-blue-400">L {formatNumber(snap.like_count)}</div>
+                    <div className="rounded-xl border border-white/5 bg-black/30 p-3 text-amber-400">C {formatNumber(snap.comment_count)}</div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No history yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
 
       {loading ? (
         <div className="flex justify-center py-32">
