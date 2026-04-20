@@ -38,6 +38,7 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 - Metrics worker sudah melakukan sync snapshot metrik YouTube ke Postgres.
 - Dashboard analytics sudah menampilkan growth by niche, video, platform, dan akun.
 - Quality control agent sekarang memblokir upload kalau render atau isi konten gagal review.
+- Branding profile per niche sekarang menambahkan avatar cache, watermark, dan intro/outro.
 - Publisher adapter sudah punya:
   - YouTube API path
   - Chromium profile fallback
@@ -49,6 +50,7 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 - Dashboard videos sekarang punya panel analytics metrik dasar.
 - `distribution_jobs` dan metrics masih diproses dengan worker polling sederhana, belum queue/broker terpisah.
 - QC reviewer masih heuristik-first dengan Gemini sebagai reviewer tambahan kalau kredensial ada.
+- Avatar branding masih cache-first; belum ada dashboard editor untuk memilih persona secara manual.
 
 ## Not Started
 

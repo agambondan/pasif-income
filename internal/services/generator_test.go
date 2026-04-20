@@ -71,6 +71,8 @@ func TestGenerateContent_Success(t *testing.T) {
 		&fakeImageGenerator{},
 		&fakeVideoAssembler{},
 		&fakeUploader{},
+		nil,
+		nil,
 	)
 
 	story, err := s.GenerateContent(context.Background(), "motivation", "discipline")
@@ -90,6 +92,8 @@ func TestGenerateContent_ScriptError(t *testing.T) {
 		&fakeImageGenerator{},
 		&fakeVideoAssembler{},
 		&fakeUploader{},
+		nil,
+		nil,
 	)
 
 	_, err := s.GenerateContent(context.Background(), "motivation", "discipline")

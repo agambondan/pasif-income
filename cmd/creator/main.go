@@ -33,7 +33,7 @@ func main() {
 	}
 
 	// 2. Initialize Service
-	service := services.NewGeneratorService(writer, voice, image, assembler, uploader, services.NewQualityControlService(apiKey))
+	service := services.NewGeneratorService(writer, voice, image, assembler, uploader, services.NewBrandingService(image), services.NewQualityControlService(apiKey))
 
 	// 3. Execution
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)

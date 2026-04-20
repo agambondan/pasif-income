@@ -17,15 +17,20 @@ type GeneratorService struct {
 	image     ports.ImageGenerator
 	assembler ports.VideoAssembler
 	uploader  ports.Uploader
+	branding  *BrandingService
 	quality   *QualityControlService
 }
 
-func NewGeneratorService(w ports.ScriptWriter, v ports.VoiceGenerator, i ports.ImageGenerator, a ports.VideoAssembler, u ports.Uploader, qc ...*QualityControlService) *GeneratorService {
-	svc := &GeneratorService{writer: w, voice: v, image: i, assembler: a, uploader: u}
-	if len(qc) > 0 {
-		svc.quality = qc[0]
+func NewGeneratorService(w ports.ScriptWriter, v ports.VoiceGenerator, i ports.ImageGenerator, a ports.VideoAssembler, u ports.Uploader, branding *BrandingService, qc *QualityControlService) *GeneratorService {
+	return &GeneratorService{
+		writer:    w,
+		voice:     v,
+		image:     i,
+		assembler: a,
+		uploader:  u,
+		branding:  branding,
+		quality:   qc,
 	}
-	return svc
 }
 
 func (s *GeneratorService) GenerateContent(ctx context.Context, niche string, topic string) (*domain.Story, error) {
@@ -123,6 +128,14 @@ func (s *GeneratorService) generateAttempt(ctx context.Context, niche string, to
 		}
 		story.Scenes[idx].ImagePath = imgPath
 		tempFiles = append(tempFiles, imgPath)
+	}
+
+	if s.branding != nil {
+		brand, err := s.branding.Resolve(ctx, niche)
+		if err != nil {
+			log.Printf("Warning: branding resolve failed: %v", err)
+		}
+		story.Branding = brand
 	}
 
 	// 4. Assemble Video

@@ -79,6 +79,23 @@ func (s *QualityControlService) Review(ctx context.Context, story *domain.Story)
 		}
 	}
 
+	if story.Branding == nil {
+		report.Warnings = append(report.Warnings, "branding profile missing")
+		report.Score -= 5
+	} else {
+		if strings.TrimSpace(story.Branding.Persona) == "" || strings.TrimSpace(story.Branding.Watermark) == "" {
+			report.Warnings = append(report.Warnings, "branding text is incomplete")
+			report.Score -= 5
+		}
+		if strings.TrimSpace(story.Branding.AvatarPath) == "" {
+			report.Warnings = append(report.Warnings, "branding avatar missing")
+			report.Score -= 5
+		} else if _, err := os.Stat(story.Branding.AvatarPath); err != nil {
+			report.Warnings = append(report.Warnings, fmt.Sprintf("branding avatar missing: %v", err))
+			report.Score -= 5
+		}
+	}
+
 	if s.apiKey != "" || strings.TrimSpace(os.Getenv("GEMINI_ACCESS_TOKEN")) != "" {
 		if aiReport, err := s.reviewWithGemini(ctx, story, report); err != nil {
 			report.Warnings = append(report.Warnings, fmt.Sprintf("ai reviewer unavailable: %v", err))
