@@ -19,6 +19,7 @@ type GenerationJob = {
   video_path?: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   error?: string;
+  scheduled_at?: string | null;
   created_at: string;
   updated_at: string;
 };
