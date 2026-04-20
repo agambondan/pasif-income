@@ -39,6 +39,7 @@ type apiServer struct {
 	auth      *services.AuthService
 	platform  *services.PlatformService
 	metrics   *services.MetricsService
+	alerts    *services.PerformanceAlertService
 	research  *services.TrendResearchService
 	community *services.CommunityService
 }
@@ -64,6 +65,7 @@ func main() {
 		auth:     services.NewAuthService(repo),
 		platform: services.NewPlatformService(repo),
 		metrics:  services.NewMetricsService(repo),
+		alerts:   services.NewPerformanceAlertService(),
 		research: services.NewTrendResearchService(),
 	}
 
@@ -566,6 +568,7 @@ type metricsResponse struct {
 	Summary metricsSummary               `json:"summary"`
 	Latest  []domain.VideoMetricSnapshot `json:"latest"`
 	History []domain.VideoMetricSnapshot `json:"history"`
+	Alerts  []domain.PerformanceAlert    `json:"alerts"`
 }
 
 type communitySummary struct {
@@ -609,10 +612,15 @@ func (a *apiServer) metricsHandler(w http.ResponseWriter, r *http.Request) {
 
 	latest := collapseLatestMetricSnapshots(history)
 	summary := summarizeMetrics(latest)
+	alerts := []domain.PerformanceAlert{}
+	if a.alerts != nil {
+		alerts = a.alerts.Assess(history)
+	}
 	writeJSON(w, http.StatusOK, metricsResponse{
 		Summary: summary,
 		Latest:  latest,
 		History: history,
+		Alerts:  alerts,
 	})
 }
 
@@ -1162,6 +1170,7 @@ func (a *apiServer) runGeneration(userID int, jobID, niche, topic string, destin
 				Status:          "pending",
 				StatusDetail:    "queued",
 				ScheduledAt:     computeScheduledAt(scheduleMode, dripIntervalDays, startAt, i),
+				RetryAttempt:    0,
 				CreatedAt:       time.Now(),
 				UpdatedAt:       time.Now(),
 			}

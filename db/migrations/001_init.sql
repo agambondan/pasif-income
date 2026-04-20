@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS distribution_jobs (
     external_id TEXT,
     error TEXT,
     scheduled_at TIMESTAMP NULL,
+    retry_source_job_id INT REFERENCES distribution_jobs(id),
+    retry_attempt INT DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

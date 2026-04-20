@@ -19,6 +19,7 @@ MVP analytics sekarang fokus ke YouTube API:
 - snapshot diambil dari YouTube Data API untuk video yang sudah ter-publish
 - dashboard menampilkan ringkasan views, likes, comments, dan histori snapshot
 - dashboard juga menampilkan growth by niche, video, platform, dan account
+- dashboard juga menampilkan alert kalau views drop tajam dibanding snapshot sebelumnya
 - worker background melakukan sync periodik
 - endpoint manual tersedia untuk memaksa refresh
 
@@ -70,11 +71,11 @@ Halaman `videos` sekarang menampilkan:
 - total comments
 - latest metric snapshot per video
 - recent snapshot history
+- sharp drop alerts untuk video yang turun drastis
 
 ## Next Step
 
 Setelah ini, ekstensi paling bernilai adalah:
 
-- alert kalau performa drop tajam
 - scheduled sync yang lebih cerdas per platform
 - comparison view between accounts with same platform

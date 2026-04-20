@@ -11,6 +11,8 @@ type DistributionJob = {
   status_detail: string;
   external_id: string;
   error: string;
+  retry_source_job_id?: number | null;
+  retry_attempt?: number;
   created_at: string;
   updated_at: string;
 };
@@ -43,6 +45,23 @@ type MetricsResponse = {
   summary: MetricsSummary;
   latest: VideoMetricSnapshot[];
   history: VideoMetricSnapshot[];
+  alerts: PerformanceAlert[];
+};
+
+type PerformanceAlert = {
+  id: string;
+  level: 'medium' | 'high' | 'critical';
+  platform: string;
+  account_id: string;
+  niche: string;
+  external_id: string;
+  video_title: string;
+  metric: string;
+  current_value: number;
+  previous_value: number;
+  drop_percent: number;
+  message: string;
+  created_at: string;
 };
 
 type CommunityReplyDraft = {
@@ -185,6 +204,7 @@ export default function VideoLibrary() {
   const [metricsSummary, setMetricsSummary] = useState<MetricsSummary | null>(null);
   const [metricsLatest, setMetricsLatest] = useState<VideoMetricSnapshot[]>([]);
   const [metricsHistory, setMetricsHistory] = useState<VideoMetricSnapshot[]>([]);
+  const [performanceAlerts, setPerformanceAlerts] = useState<PerformanceAlert[]>([]);
   const [communitySummary, setCommunitySummary] = useState<CommunitySummary | null>(null);
   const [communityLatest, setCommunityLatest] = useState<CommunityReplyDraft[]>([]);
   const [loading, setLoading] = useState(true);
@@ -217,6 +237,7 @@ export default function VideoLibrary() {
       setMetricsSummary(data.summary || null);
       setMetricsLatest(data.latest || []);
       setMetricsHistory(data.history || []);
+      setPerformanceAlerts(data.alerts || []);
     } catch (err) {
       console.error('Failed to fetch metrics:', err);
     }
@@ -616,6 +637,56 @@ export default function VideoLibrary() {
         </div>
       </section>
 
+      <section className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl">
+        <div className="flex items-center justify-between gap-4 mb-6">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Performance Watch</p>
+            <h3 className="text-2xl font-black text-white uppercase tracking-tight">Sharp Drop Alerts</h3>
+          </div>
+          <span className="rounded-full border border-white/5 bg-black/30 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-zinc-400">
+            {performanceAlerts.length} active
+          </span>
+        </div>
+
+        {performanceAlerts.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            {performanceAlerts.map((alert) => (
+              <div
+                key={alert.id}
+                className={`rounded-2xl border p-4 ${
+                  alert.level === 'critical'
+                    ? 'border-red-500/30 bg-red-500/10'
+                    : alert.level === 'high'
+                      ? 'border-orange-500/30 bg-orange-500/10'
+                      : 'border-amber-500/30 bg-amber-500/10'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-white uppercase tracking-tight line-clamp-1">{alert.video_title || alert.external_id}</p>
+                    <p className="mt-1 text-[10px] font-mono text-zinc-300 uppercase tracking-widest">
+                      {alert.platform} · {alert.account_id}
+                    </p>
+                  </div>
+                  <span className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-white">
+                    -{alert.drop_percent.toFixed(1)}%
+                  </span>
+                </div>
+                <p className="mt-3 text-sm text-zinc-100">{alert.message}</p>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-[10px] font-black uppercase tracking-widest">
+                  <div className="rounded-xl border border-white/5 bg-black/30 p-3 text-emerald-300">Current {formatNumber(alert.current_value)}</div>
+                  <div className="rounded-xl border border-white/5 bg-black/30 p-3 text-blue-300">Previous {formatNumber(alert.previous_value)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-3xl border-2 border-dashed border-white/5 py-14 text-center">
+            <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No sharp drop alerts</p>
+          </div>
+        )}
+      </section>
+
       {loading ? (
         <div className="flex justify-center py-32">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.3)]"></div>
@@ -701,6 +772,15 @@ export default function VideoLibrary() {
                             <p className="text-[9px] text-zinc-600 font-black uppercase tracking-widest">Last Update</p>
                             <p className="text-[10px] text-zinc-400 font-bold uppercase">{formatTime(dist.updated_at)}</p>
                         </div>
+                        {(dist.retry_attempt || dist.retry_source_job_id) && (
+                            <div className="space-y-1 col-span-2">
+                                <p className="text-[9px] text-zinc-600 font-black uppercase tracking-widest">Retry Chain</p>
+                                <p className="text-[10px] text-zinc-400 font-bold uppercase">
+                                    Attempt {dist.retry_attempt || 0}
+                                    {dist.retry_source_job_id ? ` · failover from ${dist.retry_source_job_id}` : ''}
+                                </p>
+                            </div>
+                        )}
                         {dist.error && (
                             <div className="col-span-2 mt-2 bg-red-500/5 border border-red-500/10 rounded-lg p-2">
                                 <p className="text-[9px] text-red-400 font-bold uppercase tracking-widest mb-1">Error Report</p>

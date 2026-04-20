@@ -37,6 +37,7 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 - Distribution worker sudah memproses pending `distribution_jobs`.
 - Metrics worker sudah melakukan sync snapshot metrik YouTube ke Postgres.
 - Dashboard analytics sudah menampilkan growth by niche, video, platform, dan akun.
+- Dashboard analytics sekarang juga menampilkan alert kalau performa drop tajam.
 - Quality control agent sekarang memblokir upload kalau render atau isi konten gagal review.
 - Branding profile per niche sekarang menambahkan avatar cache, watermark, dan intro/outro.
 - Niche research sekarang bisa menarik signal tren live dan menyarankan topic langsung ke dashboard.
@@ -57,21 +58,22 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 - Trend research masih live-fetch first; belum ada penyimpanan histori research per niche.
 - Affiliate catalog masih config-driven; belum ada marketplace sync atau tracking klik.
 - Community reply drafts masih fokus ke YouTube API; belum ada panel moderation lengkap atau export ke platform lain.
+- Distribution failover per destination sekarang akan enqueue akun cadangan satu platform saat publish gagal.
 
 ## Not Started
 
-- retry/failover per destination
 - platform-specific upload adapter yang benar-benar real
 - Chromium browser automation yang benar-benar menekan UI platform
-- alert kalau performa drop tajam
+- UI checkbox platform dan account yang sudah connected.
+- Smart scheduling untuk drip feed upload.
 
 ## Recommended Next Order
 
-1. Retry/failover per destination.
-2. Real browser automation per platform.
-3. Alert kalau performa drop tajam.
-4. UI checkbox platform dan account yang sudah connected.
-5. Smart scheduling untuk drip feed upload.
+1. Real browser automation per platform.
+2. UI checkbox platform dan account yang sudah connected.
+3. Smart scheduling untuk drip feed upload.
+4. Comparison view between accounts on same platform.
+5. Scheduled sync yang lebih cerdas per platform.
 
 ## Related Docs
 

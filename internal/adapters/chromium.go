@@ -144,36 +144,17 @@ func (r *ChromiumRunner) AutomateUpload(ctx context.Context, profilePath, target
 		if err = automateYouTubeUpload(runCtx, filePath, title, description, progress); err != nil {
 			return err
 		}
-	} else {
-		stage = "open_upload_flow"
-		if progress != nil {
-			progress("opening_upload_flow")
-		}
-		if err = clickFirstTextMatch(runCtx, uploadActionTerms(platformID)); err != nil {
-			return fmt.Errorf("upload action not found for %s: %w", platformID, err)
-		}
-
-		stage = "attach_file"
-		if progress != nil {
-			progress("attaching_file")
-		}
-		if err = waitAndSetUploadFile(runCtx, platformID, filePath); err != nil {
+	} else if platformID == "tiktok" {
+		if err = automateTikTokUpload(runCtx, filePath, title, description, progress); err != nil {
 			return err
 		}
-
-		stage = "fill_metadata"
-		if progress != nil {
-			progress("filling_metadata")
+	} else if platformID == "instagram" {
+		if err = automateInstagramUpload(runCtx, filePath, title, description, progress); err != nil {
+			return err
 		}
-		_ = setFirstValue(runCtx, titleSelectors(platformID), title)
-		_ = setFirstValue(runCtx, descriptionSelectors(platformID), description)
-
-		stage = "publish"
-		if progress != nil {
-			progress("publishing")
-		}
-		if err = clickFirstTextMatch(runCtx, publishActionTerms(platformID)); err != nil {
-			return fmt.Errorf("publish action not found for %s: %w", platformID, err)
+	} else {
+		if err = automateGenericUpload(runCtx, platformID, filePath, title, description, progress); err != nil {
+			return err
 		}
 	}
 
@@ -385,6 +366,100 @@ func automateYouTubeUpload(ctx context.Context, filePath, title, description str
 
 	_ = waitShort(ctx)
 	_ = clickFirstTextMatch(ctx, []string{"Publish", "Save"})
+	return nil
+}
+
+func automateTikTokUpload(ctx context.Context, filePath, title, description string, progress func(string)) error {
+	if progress != nil {
+		progress("opening_upload_flow")
+	}
+	if err := clickFirstTextMatch(ctx, uploadActionTerms("tiktok")); err != nil {
+		return fmt.Errorf("tiktok upload action not found: %w", err)
+	}
+
+	if progress != nil {
+		progress("attaching_file")
+	}
+	if err := waitAndSetUploadFile(ctx, "tiktok", filePath); err != nil {
+		return err
+	}
+
+	if progress != nil {
+		progress("filling_metadata")
+	}
+	_ = setFirstValue(ctx, titleSelectors("tiktok"), title)
+	_ = setFirstValue(ctx, descriptionSelectors("tiktok"), description)
+
+	if progress != nil {
+		progress("publishing")
+	}
+	if err := clickFirstTextMatch(ctx, publishActionTerms("tiktok")); err != nil {
+		return fmt.Errorf("tiktok publish action not found: %w", err)
+	}
+	return nil
+}
+
+func automateInstagramUpload(ctx context.Context, filePath, title, description string, progress func(string)) error {
+	if progress != nil {
+		progress("opening_upload_flow")
+	}
+	if err := clickFirstTextMatch(ctx, uploadActionTerms("instagram")); err != nil {
+		return fmt.Errorf("instagram upload action not found: %w", err)
+	}
+
+	if progress != nil {
+		progress("attaching_file")
+	}
+	if err := waitAndSetUploadFile(ctx, "instagram", filePath); err != nil {
+		return err
+	}
+
+	if progress != nil {
+		progress("filling_metadata")
+	}
+	caption := description
+	if strings.TrimSpace(caption) == "" {
+		caption = title
+	}
+	_ = setFirstValue(ctx, titleSelectors("instagram"), caption)
+	_ = setFirstValue(ctx, descriptionSelectors("instagram"), description)
+
+	if progress != nil {
+		progress("publishing")
+	}
+	if err := clickFirstTextMatch(ctx, publishActionTerms("instagram")); err != nil {
+		return fmt.Errorf("instagram publish action not found: %w", err)
+	}
+	return nil
+}
+
+func automateGenericUpload(ctx context.Context, platformID, filePath, title, description string, progress func(string)) error {
+	if progress != nil {
+		progress("opening_upload_flow")
+	}
+	if err := clickFirstTextMatch(ctx, uploadActionTerms(platformID)); err != nil {
+		return fmt.Errorf("upload action not found for %s: %w", platformID, err)
+	}
+
+	if progress != nil {
+		progress("attaching_file")
+	}
+	if err := waitAndSetUploadFile(ctx, platformID, filePath); err != nil {
+		return err
+	}
+
+	if progress != nil {
+		progress("filling_metadata")
+	}
+	_ = setFirstValue(ctx, titleSelectors(platformID), title)
+	_ = setFirstValue(ctx, descriptionSelectors(platformID), description)
+
+	if progress != nil {
+		progress("publishing")
+	}
+	if err := clickFirstTextMatch(ctx, publishActionTerms(platformID)); err != nil {
+		return fmt.Errorf("publish action not found for %s: %w", platformID, err)
+	}
 	return nil
 }
 

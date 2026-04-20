@@ -136,6 +136,8 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 			external_id TEXT,
 			error TEXT,
 			scheduled_at TIMESTAMP NULL,
+			retry_source_job_id INT REFERENCES distribution_jobs(id),
+			retry_attempt INT DEFAULT 0,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
@@ -147,6 +149,8 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 	_, err = db.Exec(`
 		ALTER TABLE distribution_jobs ADD COLUMN IF NOT EXISTS status_detail TEXT DEFAULT '';
 		ALTER TABLE distribution_jobs ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMP NULL;
+		ALTER TABLE distribution_jobs ADD COLUMN IF NOT EXISTS retry_source_job_id INT REFERENCES distribution_jobs(id);
+		ALTER TABLE distribution_jobs ADD COLUMN IF NOT EXISTS retry_attempt INT DEFAULT 0;
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter distribution_jobs table: %v", err)
@@ -387,15 +391,15 @@ func (r *PostgresRepository) DeleteConnectedAccount(ctx context.Context, account
 
 func (r *PostgresRepository) CreateDistributionJob(ctx context.Context, job *domain.DistributionJob) error {
 	err := r.db.QueryRowContext(ctx, `
-		INSERT INTO distribution_jobs (generation_job_id, account_id, platform, status, status_detail, external_id, error, scheduled_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
-	`, job.GenerationJobID, job.AccountID, job.Platform, job.Status, nullString(job.StatusDetail), nullString(job.ExternalID), nullString(job.Error), nullTimePtr(job.ScheduledAt), job.CreatedAt, job.UpdatedAt).Scan(&job.ID)
+		INSERT INTO distribution_jobs (generation_job_id, account_id, platform, status, status_detail, external_id, error, scheduled_at, retry_source_job_id, retry_attempt, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id
+	`, job.GenerationJobID, job.AccountID, job.Platform, job.Status, nullString(job.StatusDetail), nullString(job.ExternalID), nullString(job.Error), nullTimePtr(job.ScheduledAt), nullIntPtr(job.RetrySourceJobID), job.RetryAttempt, job.CreatedAt, job.UpdatedAt).Scan(&job.ID)
 	return err
 }
 
 func (r *PostgresRepository) ListDistributionJobs(ctx context.Context, generationJobID string) ([]domain.DistributionJob, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, generation_job_id, account_id, platform, status, COALESCE(status_detail, ''), COALESCE(external_id, ''), COALESCE(error, ''), scheduled_at, created_at, updated_at
+		SELECT id, generation_job_id, account_id, platform, status, COALESCE(status_detail, ''), COALESCE(external_id, ''), COALESCE(error, ''), scheduled_at, retry_source_job_id, COALESCE(retry_attempt, 0), created_at, updated_at
 		FROM distribution_jobs
 		WHERE generation_job_id = $1
 		ORDER BY created_at DESC
@@ -410,7 +414,8 @@ func (r *PostgresRepository) ListDistributionJobs(ctx context.Context, generatio
 		var job domain.DistributionJob
 		var extID, errStr, detail string
 		var scheduledAt sql.NullTime
-		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &scheduledAt, &job.CreatedAt, &job.UpdatedAt); err != nil {
+		var retrySource sql.NullInt64
+		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &scheduledAt, &retrySource, &job.RetryAttempt, &job.CreatedAt, &job.UpdatedAt); err != nil {
 			return nil, err
 		}
 		job.StatusDetail = detail
@@ -419,6 +424,10 @@ func (r *PostgresRepository) ListDistributionJobs(ctx context.Context, generatio
 		if scheduledAt.Valid {
 			job.ScheduledAt = &scheduledAt.Time
 		}
+		if retrySource.Valid {
+			value := int(retrySource.Int64)
+			job.RetrySourceJobID = &value
+		}
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
@@ -426,7 +435,7 @@ func (r *PostgresRepository) ListDistributionJobs(ctx context.Context, generatio
 
 func (r *PostgresRepository) ListAllDistributionJobs(ctx context.Context, userID int) ([]domain.DistributionJob, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT dj.id, dj.generation_job_id, dj.account_id, dj.platform, dj.status, COALESCE(dj.status_detail, ''), COALESCE(dj.external_id, ''), COALESCE(dj.error, ''), dj.scheduled_at, dj.created_at, dj.updated_at
+		SELECT dj.id, dj.generation_job_id, dj.account_id, dj.platform, dj.status, COALESCE(dj.status_detail, ''), COALESCE(dj.external_id, ''), COALESCE(dj.error, ''), dj.scheduled_at, dj.retry_source_job_id, COALESCE(dj.retry_attempt, 0), dj.created_at, dj.updated_at
 		FROM distribution_jobs dj
 		JOIN connected_accounts ca ON ca.id = dj.account_id
 		WHERE ca.user_id = $1
@@ -442,7 +451,8 @@ func (r *PostgresRepository) ListAllDistributionJobs(ctx context.Context, userID
 		var job domain.DistributionJob
 		var extID, errStr, detail string
 		var scheduledAt sql.NullTime
-		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &scheduledAt, &job.CreatedAt, &job.UpdatedAt); err != nil {
+		var retrySource sql.NullInt64
+		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &scheduledAt, &retrySource, &job.RetryAttempt, &job.CreatedAt, &job.UpdatedAt); err != nil {
 			return nil, err
 		}
 		job.StatusDetail = detail
@@ -451,6 +461,10 @@ func (r *PostgresRepository) ListAllDistributionJobs(ctx context.Context, userID
 		if scheduledAt.Valid {
 			job.ScheduledAt = &scheduledAt.Time
 		}
+		if retrySource.Valid {
+			value := int(retrySource.Int64)
+			job.RetrySourceJobID = &value
+		}
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
@@ -458,7 +472,7 @@ func (r *PostgresRepository) ListAllDistributionJobs(ctx context.Context, userID
 
 func (r *PostgresRepository) ListPendingDistributionJobs(ctx context.Context) ([]domain.DistributionJob, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, generation_job_id, account_id, platform, status, COALESCE(status_detail, ''), COALESCE(external_id, ''), COALESCE(error, ''), scheduled_at, created_at, updated_at
+		SELECT id, generation_job_id, account_id, platform, status, COALESCE(status_detail, ''), COALESCE(external_id, ''), COALESCE(error, ''), scheduled_at, retry_source_job_id, COALESCE(retry_attempt, 0), created_at, updated_at
 		FROM distribution_jobs
 		WHERE status = 'pending' AND (scheduled_at IS NULL OR scheduled_at <= CURRENT_TIMESTAMP)
 		ORDER BY created_at ASC
@@ -473,7 +487,8 @@ func (r *PostgresRepository) ListPendingDistributionJobs(ctx context.Context) ([
 		var job domain.DistributionJob
 		var extID, errStr, detail string
 		var scheduledAt sql.NullTime
-		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &scheduledAt, &job.CreatedAt, &job.UpdatedAt); err != nil {
+		var retrySource sql.NullInt64
+		if err := rows.Scan(&job.ID, &job.GenerationJobID, &job.AccountID, &job.Platform, &job.Status, &detail, &extID, &errStr, &scheduledAt, &retrySource, &job.RetryAttempt, &job.CreatedAt, &job.UpdatedAt); err != nil {
 			return nil, err
 		}
 		job.StatusDetail = detail
@@ -481,6 +496,10 @@ func (r *PostgresRepository) ListPendingDistributionJobs(ctx context.Context) ([
 		job.Error = errStr
 		if scheduledAt.Valid {
 			job.ScheduledAt = &scheduledAt.Time
+		}
+		if retrySource.Valid {
+			value := int(retrySource.Int64)
+			job.RetrySourceJobID = &value
 		}
 		jobs = append(jobs, job)
 	}
@@ -760,6 +779,13 @@ func nullString(value string) interface{} {
 }
 
 func nullTimePtr(value *time.Time) interface{} {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func nullIntPtr(value *int) interface{} {
 	if value == nil {
 		return nil
 	}

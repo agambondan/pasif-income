@@ -11,6 +11,7 @@ This project automates the conversion of long-form videos into viral short-form 
 - **Distribution Matrix**: Traceable plan for multi-platform and multi-account upload.
 - **Platform Auth**: API upload plus Chromium profile linking for upload destinations.
 - **Community**: AI comment drafts and optional auto-reply for YouTube engagement.
+- **Metrics**: Analytics snapshots, growth views, and sharp drop alerts.
 - **Implementation Status**: Single source of truth for done, current, and planned work.
 
 ## Tech Stack
@@ -51,4 +52,5 @@ This project automates the conversion of long-form videos into viral short-form 
 - `docs/idea-map.md`: Niche research and trending topic discovery flow.
 - `docs/platform-auth.md`: API-first plus Chromium-profile browser fallback for linking upload accounts.
 - `docs/community.md`: YouTube comment draft reply and optional auto-reply flow.
+- `docs/metrics.md`: Metrics sync flow and performance alert overview.
 - `docs/implementation-status.md`: Current implementation snapshot and next work order.

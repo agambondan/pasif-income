@@ -8,17 +8,19 @@ type Destination struct {
 }
 
 type DistributionJob struct {
-	ID              int        `json:"id"`
-	GenerationJobID string     `json:"generation_job_id"`
-	AccountID       string     `json:"account_id"`
-	Platform        string     `json:"platform"`
-	Status          string     `json:"status"`
-	StatusDetail    string     `json:"status_detail"`
-	ExternalID      string     `json:"external_id"`
-	Error           string     `json:"error"`
-	ScheduledAt     *time.Time `json:"scheduled_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID               int        `json:"id"`
+	GenerationJobID  string     `json:"generation_job_id"`
+	AccountID        string     `json:"account_id"`
+	Platform         string     `json:"platform"`
+	Status           string     `json:"status"`
+	StatusDetail     string     `json:"status_detail"`
+	ExternalID       string     `json:"external_id"`
+	Error            string     `json:"error"`
+	ScheduledAt      *time.Time `json:"scheduled_at,omitempty"`
+	RetrySourceJobID *int       `json:"retry_source_job_id,omitempty"`
+	RetryAttempt     int        `json:"retry_attempt"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // GenerationJob represents a persisted generation request and its status.
