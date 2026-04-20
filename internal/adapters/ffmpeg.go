@@ -77,8 +77,10 @@ func (a *FFmpegAssembler) Assemble(ctx context.Context, story *domain.Story) (st
 	outputPath := fmt.Sprintf("faceless_%s.mp4", strings.ReplaceAll(story.Title, " ", "_"))
 	args := []string{"-y", "-f", "lavfi", "-i", "color=c=black:s=1080x1920:d=60", "-i", story.Voiceover}
 	brand := story.Branding
+	avatarInputIdx := -1
 	if brand != nil && strings.TrimSpace(brand.AvatarPath) != "" {
 		args = append(args, "-i", brand.AvatarPath)
+		avatarInputIdx = 2
 	}
 
 	for _, scene := range story.Scenes {
@@ -92,8 +94,8 @@ func (a *FFmpegAssembler) Assemble(ctx context.Context, story *domain.Story) (st
 	var filterParts []string
 	lastOutput := "0:v"
 	sceneStartIndex := 2
-	if brand != nil && strings.TrimSpace(brand.AvatarPath) != "" {
-		sceneStartIndex++
+	if avatarInputIdx != -1 {
+		sceneStartIndex = 3
 	}
 	for i, scene := range story.Scenes {
 		inputIdx := i + sceneStartIndex
@@ -110,9 +112,9 @@ func (a *FFmpegAssembler) Assemble(ctx context.Context, story *domain.Story) (st
 	}
 
 	if brand != nil {
-		if avatarIdx := len(args) - len(story.Scenes) - 1; strings.TrimSpace(brand.AvatarPath) != "" && avatarIdx > 1 {
+		if avatarInputIdx != -1 {
 			avatarScaled := "brand_avatar"
-			filterParts = append(filterParts, fmt.Sprintf("[%d:v]scale=220:220[%s]", avatarIdx, avatarScaled))
+			filterParts = append(filterParts, fmt.Sprintf("[%d:v]scale=220:220[%s]", avatarInputIdx, avatarScaled))
 			filterParts, lastOutput = appendAvatarOverlay(filterParts, lastOutput, avatarScaled, brand, story.Voiceover)
 		}
 		filterParts, lastOutput = appendBrandTextOverlays(filterParts, lastOutput, brand, story.Voiceover)
@@ -120,7 +122,7 @@ func (a *FFmpegAssembler) Assemble(ctx context.Context, story *domain.Story) (st
 
 	// Simple captions for fallback
 	for i, scene := range story.Scenes {
-		cleanText := strings.ReplaceAll(scene.Text, "'", "")
+		cleanText := escapeDrawText(strings.ReplaceAll(scene.Text, "'", ""))
 		timeRange := strings.TrimSuffix(scene.Timestamp, "s")
 		parts := strings.Split(timeRange, "-")
 		if len(parts) == 2 {
@@ -155,8 +157,10 @@ func (a *FFmpegAssembler) assembleWithoutCaptions(ctx context.Context, story *do
 	outputPath := fmt.Sprintf("faceless_%s.mp4", strings.ReplaceAll(story.Title, " ", "_"))
 	args := []string{"-y", "-f", "lavfi", "-i", "color=c=black:s=1080x1920:d=60", "-i", story.Voiceover}
 	brand := story.Branding
+	avatarInputIdx := -1
 	if brand != nil && strings.TrimSpace(brand.AvatarPath) != "" {
 		args = append(args, "-i", brand.AvatarPath)
+		avatarInputIdx = 2
 	}
 
 	for _, scene := range story.Scenes {
@@ -170,8 +174,8 @@ func (a *FFmpegAssembler) assembleWithoutCaptions(ctx context.Context, story *do
 	var filterParts []string
 	lastOutput := "0:v"
 	sceneStartIndex := 2
-	if brand != nil && strings.TrimSpace(brand.AvatarPath) != "" {
-		sceneStartIndex++
+	if avatarInputIdx != -1 {
+		sceneStartIndex = 3
 	}
 	for i := range story.Scenes {
 		inputIdx := i + sceneStartIndex
@@ -187,9 +191,9 @@ func (a *FFmpegAssembler) assembleWithoutCaptions(ctx context.Context, story *do
 	}
 
 	if brand != nil {
-		if avatarIdx := len(args) - len(story.Scenes) - 1; strings.TrimSpace(brand.AvatarPath) != "" && avatarIdx > 1 {
+		if avatarInputIdx != -1 {
 			avatarScaled := "brand_avatar"
-			filterParts = append(filterParts, fmt.Sprintf("[%d:v]scale=220:220[%s]", avatarIdx, avatarScaled))
+			filterParts = append(filterParts, fmt.Sprintf("[%d:v]scale=220:220[%s]", avatarInputIdx, avatarScaled))
 			filterParts, lastOutput = appendAvatarOverlay(filterParts, lastOutput, avatarScaled, brand, story.Voiceover)
 		}
 	}

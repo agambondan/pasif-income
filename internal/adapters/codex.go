@@ -87,21 +87,17 @@ func (c *CodexWriter) WriteScript(ctx context.Context, niche, topic string) (*do
 
 func (c *CodexWriter) writeScriptWithModel(ctx context.Context, token, model, niche, topic string) (*domain.Story, error) {
 	apiURL := "https://chatgpt.com/backend-api" + codexEndpointPath
-	body := map[string]any{
-		"model":  model,
-		"stream": true,
-		"store":  false,
-		"input": []any{
-			map[string]any{
-				"role": "user",
-				"content": fmt.Sprintf(`Act as a Professional Faceless Channel Content Creator.
-Niche: %s
-Topic: %s
+	instructions := `Act as a Professional Faceless Channel Content Creator.
 
-STRICT RULES:
+Rules:
 1. NO MUSIC.
 2. NO WOMEN.
 3. STRICT ISLAMIC SHARIA PRINCIPLES.
+
+Return JSON only.`
+
+	userPrompt := fmt.Sprintf(`Niche: %s
+Topic: %s
 
 Create a viral script for a Short video (30-60s).
 Output MUST be a JSON object:
@@ -109,7 +105,17 @@ Output MUST be a JSON object:
   "title": "Viral Title",
   "script": "The full spoken narration text...",
   "scenes": [{"timestamp": "0-5s", "visual_prompt": "shot of...", "scene_text": "text"}]
-}`, niche, topic),
+}`, niche, topic)
+
+	body := map[string]any{
+		"model":        model,
+		"instructions": instructions,
+		"stream":       true,
+		"store":        false,
+		"input": []any{
+			map[string]any{
+				"role":    "user",
+				"content": userPrompt,
 			},
 		},
 	}
