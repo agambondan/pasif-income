@@ -40,6 +40,8 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 - Quality control agent sekarang memblokir upload kalau render atau isi konten gagal review.
 - Branding profile per niche sekarang menambahkan avatar cache, watermark, dan intro/outro.
 - Niche research sekarang bisa menarik signal tren live dan menyarankan topic langsung ke dashboard.
+- Dynamic affiliate insertion sekarang menempelkan disclosure, link, dan pin comment ke job production.
+- Audience engagement agent sekarang menarik komentar YouTube dan menyimpan draft reply, dengan auto-reply opsional via env.
 - Publisher adapter sudah punya:
   - YouTube API path
   - Chromium profile fallback
@@ -53,6 +55,8 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 - QC reviewer masih heuristik-first dengan Gemini sebagai reviewer tambahan kalau kredensial ada.
 - Avatar branding masih cache-first; belum ada dashboard editor untuk memilih persona secara manual.
 - Trend research masih live-fetch first; belum ada penyimpanan histori research per niche.
+- Affiliate catalog masih config-driven; belum ada marketplace sync atau tracking klik.
+- Community reply drafts masih fokus ke YouTube API; belum ada panel moderation lengkap atau export ke platform lain.
 
 ## Not Started
 

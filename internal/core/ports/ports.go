@@ -17,7 +17,7 @@ type Repository interface {
 	UpdateStatus(ctx context.Context, clipID string, status string) error
 	ListClips(ctx context.Context) ([]domain.Clip, error)
 	CreateJob(ctx context.Context, job *domain.GenerationJob) error
-	UpdateJobArtifact(ctx context.Context, jobID string, title string, description string, videoPath string) error
+	UpdateJobArtifact(ctx context.Context, jobID string, title string, description string, pinComment string, videoPath string) error
 	UpdateJobStatus(ctx context.Context, jobID string, status string, errMsg string) error
 	GetJob(ctx context.Context, jobID string) (*domain.GenerationJob, error)
 	ListJobs(ctx context.Context) ([]domain.GenerationJob, error)
@@ -46,6 +46,10 @@ type Repository interface {
 	SaveVideoMetricSnapshot(ctx context.Context, snapshot *domain.VideoMetricSnapshot) error
 	ListVideoMetricSnapshots(ctx context.Context, userID int) ([]domain.VideoMetricSnapshot, error)
 	ListVideoMetricSnapshotsByJob(ctx context.Context, generationJobID string) ([]domain.VideoMetricSnapshot, error)
+
+	// Community
+	SaveCommunityReplyDraft(ctx context.Context, draft *domain.CommunityReplyDraft) error
+	ListCommunityReplyDrafts(ctx context.Context, userID int) ([]domain.CommunityReplyDraft, error)
 }
 
 // Creation Pipeline Ports (Faceless)
@@ -71,6 +75,10 @@ type Uploader interface {
 
 type Publisher interface {
 	Publish(ctx context.Context, filePath string, title string, description string, account domain.ConnectedAccount, progress func(string)) (externalID string, err error)
+}
+
+type CommentResponder interface {
+	DraftReply(ctx context.Context, niche, topic, videoTitle, commentText, persona string) (string, error)
 }
 
 // Clipping Pipeline Ports (Podcast)

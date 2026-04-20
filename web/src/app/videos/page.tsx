@@ -45,6 +45,39 @@ type MetricsResponse = {
   history: VideoMetricSnapshot[];
 };
 
+type CommunityReplyDraft = {
+  id: number;
+  user_id: number;
+  generation_job_id: string;
+  distribution_job_id: number;
+  account_id: string;
+  platform: string;
+  niche: string;
+  video_title: string;
+  external_comment_id: string;
+  parent_comment_id: string;
+  comment_author: string;
+  comment_text: string;
+  suggested_reply: string;
+  status: string;
+  posted_external_id: string;
+  replied_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type CommunitySummary = {
+  total: number;
+  drafts: number;
+  replied: number;
+  latest_created_at?: string | null;
+};
+
+type CommunityResponse = {
+  summary: CommunitySummary;
+  latest: CommunityReplyDraft[];
+};
+
 function formatTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -152,8 +185,11 @@ export default function VideoLibrary() {
   const [metricsSummary, setMetricsSummary] = useState<MetricsSummary | null>(null);
   const [metricsLatest, setMetricsLatest] = useState<VideoMetricSnapshot[]>([]);
   const [metricsHistory, setMetricsHistory] = useState<VideoMetricSnapshot[]>([]);
+  const [communitySummary, setCommunitySummary] = useState<CommunitySummary | null>(null);
+  const [communityLatest, setCommunityLatest] = useState<CommunityReplyDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSyncingMetrics, setIsSyncingMetrics] = useState(false);
+  const [isSyncingCommunity, setIsSyncingCommunity] = useState(false);
 
   const nicheTrendSeries = useMemo(() => {
     return buildTrendSeries(metricsHistory, (item) => item.niche || item.platform || 'unknown').slice(0, 3);
@@ -186,6 +222,20 @@ export default function VideoLibrary() {
     }
   }, []);
 
+  const fetchCommunity = useCallback(async () => {
+    try {
+      const res = await fetch('/api/community/replies', { credentials: 'include' });
+      if (!res.ok) {
+        return;
+      }
+      const data = (await res.json()) as CommunityResponse;
+      setCommunitySummary(data.summary || null);
+      setCommunityLatest(data.latest || []);
+    } catch (err) {
+      console.error('Failed to fetch community replies:', err);
+    }
+  }, []);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -204,7 +254,7 @@ export default function VideoLibrary() {
           setPublishHistory(data || []);
         }
 
-        await fetchMetrics();
+        await Promise.all([fetchMetrics(), fetchCommunity()]);
       } catch (err) {
         console.error('Failed to fetch data:', err);
       } finally {
@@ -212,7 +262,7 @@ export default function VideoLibrary() {
       }
     };
     fetchData();
-  }, [fetchMetrics]);
+  }, [fetchCommunity, fetchMetrics]);
 
   const syncMetrics = async () => {
     try {
@@ -232,6 +282,24 @@ export default function VideoLibrary() {
     }
   };
 
+  const syncCommunity = async () => {
+    try {
+      setIsSyncingCommunity(true);
+      const res = await fetch('/api/community/sync', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      await fetchCommunity();
+    } catch (err) {
+      console.error('Failed to sync community:', err);
+    } finally {
+      setIsSyncingCommunity(false);
+    }
+  };
+
   return (
     <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-l-4 border-blue-500 pl-6">
@@ -246,6 +314,13 @@ export default function VideoLibrary() {
             className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-emerald-300 transition-all hover:bg-emerald-500/20 active:scale-95 disabled:opacity-50"
           >
             {isSyncingMetrics ? 'SYNCING METRICS...' : 'SYNC METRICS'}
+          </button>
+          <button
+            onClick={syncCommunity}
+            disabled={isSyncingCommunity}
+            className="rounded-2xl bg-fuchsia-500/10 border border-fuchsia-500/20 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-fuchsia-300 transition-all hover:bg-fuchsia-500/20 active:scale-95 disabled:opacity-50"
+          >
+            {isSyncingCommunity ? 'SYNCING COMMUNITY...' : 'SYNC COMMUNITY'}
           </button>
           <div className="bg-zinc-900 border border-white/5 rounded-2xl px-6 py-3 text-xs font-bold text-zinc-500">
               TOTAL ASSETS: {videos.length}
@@ -467,6 +542,74 @@ export default function VideoLibrary() {
             ) : (
               <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
                 <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No history yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
+        <div className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl">
+          <div className="mb-6">
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Community Agent</p>
+            <h3 className="text-2xl font-black text-white uppercase tracking-tight">Comment Reply Drafts</h3>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Total</p>
+              <p className="mt-1 text-2xl font-black text-white">{communitySummary ? formatNumber(communitySummary.total) : '0'}</p>
+            </div>
+            <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Drafts</p>
+              <p className="mt-1 text-2xl font-black text-fuchsia-300">{communitySummary ? formatNumber(communitySummary.drafts) : '0'}</p>
+            </div>
+            <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Replied</p>
+              <p className="mt-1 text-2xl font-black text-emerald-400">{communitySummary ? formatNumber(communitySummary.replied) : '0'}</p>
+            </div>
+          </div>
+          <p className="mt-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+            Last Draft Sync: {communitySummary?.latest_created_at ? formatTime(communitySummary.latest_created_at) : 'Never'}
+          </p>
+        </div>
+
+        <div className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl">
+          <div className="mb-6">
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Community Queue</p>
+            <h3 className="text-2xl font-black text-white uppercase tracking-tight">Latest Reply Suggestions</h3>
+          </div>
+          <div className="space-y-4 max-h-[420px] overflow-auto pr-2 custom-scrollbar">
+            {communityLatest.length > 0 ? (
+              communityLatest.slice(0, 10).map((draft) => (
+                <div key={draft.id} className="rounded-2xl border border-white/5 bg-black/40 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-black text-white uppercase tracking-tight line-clamp-1">{draft.video_title || draft.external_comment_id}</p>
+                      <p className="mt-1 text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+                        {draft.platform} · {draft.comment_author || 'viewer'}
+                      </p>
+                    </div>
+                    <span className={`rounded-lg border px-2 py-1 text-[9px] font-black uppercase tracking-widest ${
+                      draft.status === 'replied'
+                        ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+                        : 'border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-300'
+                    }`}>
+                      {draft.status}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm text-zinc-300 line-clamp-3">{draft.comment_text}</p>
+                  <div className="mt-3 rounded-xl border border-white/5 bg-black/30 p-3">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Suggested Reply</p>
+                    <p className="mt-1 text-sm text-white line-clamp-4">{draft.suggested_reply}</p>
+                  </div>
+                  <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-zinc-600">
+                    {formatTime(draft.created_at)}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No community drafts yet</p>
               </div>
             )}
           </div>

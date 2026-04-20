@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
     topic TEXT NOT NULL,
     title TEXT DEFAULT '',
     description TEXT DEFAULT '',
+    pin_comment TEXT DEFAULT '',
     video_path TEXT DEFAULT '',
     status TEXT NOT NULL,
     error TEXT,
@@ -81,4 +82,26 @@ CREATE TABLE IF NOT EXISTS video_metric_snapshots (
     like_count BIGINT DEFAULT 0,
     comment_count BIGINT DEFAULT 0,
     collected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS community_reply_drafts (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    generation_job_id TEXT REFERENCES generation_jobs(id),
+    distribution_job_id INT REFERENCES distribution_jobs(id),
+    account_id TEXT REFERENCES connected_accounts(id),
+    platform TEXT NOT NULL,
+    niche TEXT DEFAULT '',
+    video_title TEXT DEFAULT '',
+    external_comment_id TEXT NOT NULL,
+    parent_comment_id TEXT DEFAULT '',
+    comment_author TEXT DEFAULT '',
+    comment_text TEXT NOT NULL,
+    suggested_reply TEXT NOT NULL,
+    status TEXT DEFAULT 'draft',
+    posted_external_id TEXT DEFAULT '',
+    replied_at TIMESTAMP NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(distribution_job_id, external_comment_id)
 );

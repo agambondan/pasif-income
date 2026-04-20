@@ -18,10 +18,11 @@ type GeneratorService struct {
 	assembler ports.VideoAssembler
 	uploader  ports.Uploader
 	branding  *BrandingService
+	affiliate *AffiliateService
 	quality   *QualityControlService
 }
 
-func NewGeneratorService(w ports.ScriptWriter, v ports.VoiceGenerator, i ports.ImageGenerator, a ports.VideoAssembler, u ports.Uploader, branding *BrandingService, qc *QualityControlService) *GeneratorService {
+func NewGeneratorService(w ports.ScriptWriter, v ports.VoiceGenerator, i ports.ImageGenerator, a ports.VideoAssembler, u ports.Uploader, branding *BrandingService, affiliate *AffiliateService, qc *QualityControlService) *GeneratorService {
 	return &GeneratorService{
 		writer:    w,
 		voice:     v,
@@ -29,6 +30,7 @@ func NewGeneratorService(w ports.ScriptWriter, v ports.VoiceGenerator, i ports.I
 		assembler: a,
 		uploader:  u,
 		branding:  branding,
+		affiliate: affiliate,
 		quality:   qc,
 	}
 }
@@ -89,7 +91,10 @@ func (s *GeneratorService) GenerateContent(ctx context.Context, niche string, to
 			}
 		}
 
-		description := fmt.Sprintf("#%s #%s #ai #faceless", niche, strings.ReplaceAll(topic, " ", ""))
+		description := story.Description
+		if strings.TrimSpace(description) == "" {
+			description = fmt.Sprintf("#%s #%s #ai #faceless", niche, strings.ReplaceAll(topic, " ", ""))
+		}
 		if err := s.uploader.Upload(ctx, story.VideoOutput, story.Title, description); err != nil {
 			log.Printf("Warning: Upload failed: %v", err)
 		}
@@ -136,6 +141,18 @@ func (s *GeneratorService) generateAttempt(ctx context.Context, niche string, to
 			log.Printf("Warning: branding resolve failed: %v", err)
 		}
 		story.Branding = brand
+	}
+
+	if s.affiliate != nil {
+		plan := s.affiliate.Build(niche, topic)
+		if plan != nil {
+			story.Affiliate = plan
+			story.Description = plan.Description
+			story.PinComment = plan.PinComment
+		}
+	}
+	if strings.TrimSpace(story.Description) == "" {
+		story.Description = fmt.Sprintf("#%s #%s #ai #faceless", niche, strings.ReplaceAll(topic, " ", ""))
 	}
 
 	// 4. Assemble Video

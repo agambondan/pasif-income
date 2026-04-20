@@ -28,6 +28,7 @@ type GenerationJob struct {
 	Topic       string     `json:"topic"`
 	Title       string     `json:"title,omitempty"`
 	Description string     `json:"description,omitempty"`
+	PinComment  string     `json:"pin_comment,omitempty"`
 	VideoPath   string     `json:"video_path,omitempty"`
 	Status      string     `json:"status"`
 	Error       string     `json:"error,omitempty"`

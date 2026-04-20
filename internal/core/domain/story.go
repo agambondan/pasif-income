@@ -1,13 +1,16 @@
 package domain
 
 type Story struct {
-	Title       string        `json:"title"`
-	Niche       string        `json:"niche"`
-	Script      string        `json:"script"`
-	Scenes      []Scene       `json:"scenes"`
-	Branding    *BrandProfile `json:"branding,omitempty"`
-	Voiceover   string        `json:"voiceover_path"`
-	VideoOutput string        `json:"video_path"`
+	Title       string         `json:"title"`
+	Niche       string         `json:"niche"`
+	Script      string         `json:"script"`
+	Scenes      []Scene        `json:"scenes"`
+	Affiliate   *AffiliatePlan `json:"affiliate,omitempty"`
+	Branding    *BrandProfile  `json:"branding,omitempty"`
+	Description string         `json:"description,omitempty"`
+	PinComment  string         `json:"pin_comment,omitempty"`
+	Voiceover   string         `json:"voiceover_path"`
+	VideoOutput string         `json:"video_path"`
 }
 
 type Scene struct {

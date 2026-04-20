@@ -49,6 +49,7 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 			topic TEXT NOT NULL,
 			title TEXT DEFAULT '',
 			description TEXT DEFAULT '',
+			pin_comment TEXT DEFAULT '',
 			video_path TEXT DEFAULT '',
 			status TEXT NOT NULL,
 			error TEXT,
@@ -64,6 +65,7 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 	_, err = db.Exec(`
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS title TEXT DEFAULT '';
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
+		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS pin_comment TEXT DEFAULT '';
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS video_path TEXT DEFAULT '';
 	`)
 	if err != nil {
@@ -169,6 +171,33 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create video_metric_snapshots table: %v", err)
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS community_reply_drafts (
+			id SERIAL PRIMARY KEY,
+			user_id INT REFERENCES users(id),
+			generation_job_id TEXT REFERENCES generation_jobs(id),
+			distribution_job_id INT REFERENCES distribution_jobs(id),
+			account_id TEXT REFERENCES connected_accounts(id),
+			platform TEXT NOT NULL,
+			niche TEXT DEFAULT '',
+			video_title TEXT DEFAULT '',
+			external_comment_id TEXT NOT NULL,
+			parent_comment_id TEXT DEFAULT '',
+			comment_author TEXT DEFAULT '',
+			comment_text TEXT NOT NULL,
+			suggested_reply TEXT NOT NULL,
+			status TEXT DEFAULT 'draft',
+			posted_external_id TEXT DEFAULT '',
+			replied_at TIMESTAMP NULL,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(distribution_job_id, external_comment_id)
+		)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create community_reply_drafts table: %v", err)
 	}
 
 	return &PostgresRepository{db}, nil
@@ -485,6 +514,32 @@ func (r *PostgresRepository) SaveVideoMetricSnapshot(ctx context.Context, snapsh
 	`, snapshot.UserID, snapshot.GenerationJobID, snapshot.DistributionJobID, snapshot.AccountID, snapshot.Platform, snapshot.ExternalID, snapshot.VideoTitle, int64(snapshot.ViewCount), int64(snapshot.LikeCount), int64(snapshot.CommentCount), snapshot.CollectedAt).Scan(&snapshot.ID)
 }
 
+func (r *PostgresRepository) SaveCommunityReplyDraft(ctx context.Context, draft *domain.CommunityReplyDraft) error {
+	return r.db.QueryRowContext(ctx, `
+		INSERT INTO community_reply_drafts (
+			user_id, generation_job_id, distribution_job_id, account_id, platform, niche, video_title, external_comment_id, parent_comment_id, comment_author, comment_text, suggested_reply, status, posted_external_id, replied_at, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT (distribution_job_id, external_comment_id)
+		DO UPDATE SET
+			user_id = EXCLUDED.user_id,
+			generation_job_id = EXCLUDED.generation_job_id,
+			account_id = EXCLUDED.account_id,
+			platform = EXCLUDED.platform,
+			niche = EXCLUDED.niche,
+			video_title = EXCLUDED.video_title,
+			parent_comment_id = EXCLUDED.parent_comment_id,
+			comment_author = EXCLUDED.comment_author,
+			comment_text = EXCLUDED.comment_text,
+			suggested_reply = EXCLUDED.suggested_reply,
+			status = EXCLUDED.status,
+			posted_external_id = EXCLUDED.posted_external_id,
+			replied_at = EXCLUDED.replied_at,
+			updated_at = CURRENT_TIMESTAMP
+		RETURNING id, created_at, updated_at
+	`, draft.UserID, draft.GenerationJobID, draft.DistributionJobID, draft.AccountID, draft.Platform, draft.Niche, draft.VideoTitle, draft.ExternalCommentID, draft.ParentCommentID, draft.CommentAuthor, draft.CommentText, draft.SuggestedReply, draft.Status, nullString(draft.PostedExternalID), draft.RepliedAt).Scan(&draft.ID, &draft.CreatedAt, &draft.UpdatedAt)
+}
+
 func (r *PostgresRepository) ListVideoMetricSnapshots(ctx context.Context, userID int) ([]domain.VideoMetricSnapshot, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, user_id, generation_job_id, distribution_job_id, account_id, platform, COALESCE(niche, ''), external_id, COALESCE(video_title, ''), COALESCE(view_count, 0), COALESCE(like_count, 0), COALESCE(comment_count, 0), collected_at
@@ -516,6 +571,33 @@ func (r *PostgresRepository) ListVideoMetricSnapshots(ctx context.Context, userI
 		snapshots = append(snapshots, snap)
 	}
 	return snapshots, nil
+}
+
+func (r *PostgresRepository) ListCommunityReplyDrafts(ctx context.Context, userID int) ([]domain.CommunityReplyDraft, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, user_id, COALESCE(generation_job_id, ''), COALESCE(distribution_job_id, 0), COALESCE(account_id, ''), COALESCE(platform, ''), COALESCE(niche, ''), COALESCE(video_title, ''), COALESCE(external_comment_id, ''), COALESCE(parent_comment_id, ''), COALESCE(comment_author, ''), COALESCE(comment_text, ''), COALESCE(suggested_reply, ''), COALESCE(status, 'draft'), COALESCE(posted_external_id, ''), replied_at, created_at, updated_at
+		FROM community_reply_drafts
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	drafts := []domain.CommunityReplyDraft{}
+	for rows.Next() {
+		var draft domain.CommunityReplyDraft
+		var repliedAt sql.NullTime
+		if err := rows.Scan(&draft.ID, &draft.UserID, &draft.GenerationJobID, &draft.DistributionJobID, &draft.AccountID, &draft.Platform, &draft.Niche, &draft.VideoTitle, &draft.ExternalCommentID, &draft.ParentCommentID, &draft.CommentAuthor, &draft.CommentText, &draft.SuggestedReply, &draft.Status, &draft.PostedExternalID, &repliedAt, &draft.CreatedAt, &draft.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if repliedAt.Valid {
+			draft.RepliedAt = &repliedAt.Time
+		}
+		drafts = append(drafts, draft)
+	}
+	return drafts, nil
 }
 
 func (r *PostgresRepository) ListVideoMetricSnapshotsByJob(ctx context.Context, generationJobID string) ([]domain.VideoMetricSnapshot, error) {
@@ -587,12 +669,12 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, job *domain.Generati
 	return err
 }
 
-func (r *PostgresRepository) UpdateJobArtifact(ctx context.Context, jobID string, title string, description string, videoPath string) error {
+func (r *PostgresRepository) UpdateJobArtifact(ctx context.Context, jobID string, title string, description string, pinComment string, videoPath string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE generation_jobs
-		SET title = $1, description = $2, video_path = $3, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $4
-	`, title, description, videoPath, jobID)
+		SET title = $1, description = $2, pin_comment = $3, video_path = $4, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $5
+	`, title, description, pinComment, videoPath, jobID)
 	return err
 }
 
@@ -624,7 +706,7 @@ func randomToken(size int) (string, error) {
 
 func (r *PostgresRepository) GetJob(ctx context.Context, jobID string) (*domain.GenerationJob, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, niche, topic, COALESCE(title, ''), COALESCE(description, ''), COALESCE(video_path, ''), status, COALESCE(error, ''), created_at, updated_at, completed_at
+		SELECT id, niche, topic, COALESCE(title, ''), COALESCE(description, ''), COALESCE(pin_comment, ''), COALESCE(video_path, ''), status, COALESCE(error, ''), created_at, updated_at, completed_at
 		FROM generation_jobs
 		WHERE id = $1
 	`, jobID)
@@ -632,7 +714,7 @@ func (r *PostgresRepository) GetJob(ctx context.Context, jobID string) (*domain.
 	var job domain.GenerationJob
 	var errorText string
 	var completedAt sql.NullTime
-	if err := row.Scan(&job.ID, &job.Niche, &job.Topic, &job.Title, &job.Description, &job.VideoPath, &job.Status, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt); err != nil {
+	if err := row.Scan(&job.ID, &job.Niche, &job.Topic, &job.Title, &job.Description, &job.PinComment, &job.VideoPath, &job.Status, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt); err != nil {
 		return nil, err
 	}
 	job.Error = errorText
@@ -644,7 +726,7 @@ func (r *PostgresRepository) GetJob(ctx context.Context, jobID string) (*domain.
 
 func (r *PostgresRepository) ListJobs(ctx context.Context) ([]domain.GenerationJob, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, niche, topic, COALESCE(title, ''), COALESCE(description, ''), COALESCE(video_path, ''), status, COALESCE(error, ''), created_at, updated_at, completed_at
+		SELECT id, niche, topic, COALESCE(title, ''), COALESCE(description, ''), COALESCE(pin_comment, ''), COALESCE(video_path, ''), status, COALESCE(error, ''), created_at, updated_at, completed_at
 		FROM generation_jobs
 		ORDER BY updated_at DESC
 	`)
@@ -658,7 +740,7 @@ func (r *PostgresRepository) ListJobs(ctx context.Context) ([]domain.GenerationJ
 		var job domain.GenerationJob
 		var errorText string
 		var completedAt sql.NullTime
-		if err := rows.Scan(&job.ID, &job.Niche, &job.Topic, &job.Title, &job.Description, &job.VideoPath, &job.Status, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt); err != nil {
+		if err := rows.Scan(&job.ID, &job.Niche, &job.Topic, &job.Title, &job.Description, &job.PinComment, &job.VideoPath, &job.Status, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt); err != nil {
 			return nil, err
 		}
 		job.Error = errorText

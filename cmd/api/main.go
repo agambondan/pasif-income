@@ -40,6 +40,7 @@ type apiServer struct {
 	platform  *services.PlatformService
 	metrics   *services.MetricsService
 	research  *services.TrendResearchService
+	community *services.CommunityService
 }
 
 func main() {
@@ -72,6 +73,12 @@ func main() {
 	}
 	api.generator = generator
 
+	community, err := newCommunityServiceFromEnv(repo)
+	if err != nil {
+		log.Fatalf("Community init failed: %v", err)
+	}
+	api.community = community
+
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		log.Println("CRITICAL ERROR: GEMINI_API_KEY is not set. Generation will FAIL.")
 		log.Println("Please set it in your .env file or environment variables.")
@@ -86,6 +93,7 @@ func main() {
 		publisherWorker := services.NewPublisherService(repo, newPublisherFromEnv())
 		go publisherWorker.StartWorker(context.Background())
 		go api.metrics.StartWorker(context.Background())
+		go api.community.StartWorker(context.Background())
 	}
 
 	mux := http.NewServeMux()
@@ -101,6 +109,8 @@ func main() {
 	mux.HandleFunc("/api/videos", api.videosHandler)
 	mux.HandleFunc("/api/metrics", api.metricsHandler)
 	mux.HandleFunc("/api/metrics/sync", api.metricsSyncHandler)
+	mux.HandleFunc("/api/community/replies", api.communityRepliesHandler)
+	mux.HandleFunc("/api/community/sync", api.communitySyncHandler)
 	mux.HandleFunc("/api/research/ideas", api.researchIdeasHandler)
 	mux.HandleFunc("/api/clips", api.clipsHandler)
 	mux.HandleFunc("/api/generate", api.generateHandler)
@@ -558,6 +568,18 @@ type metricsResponse struct {
 	History []domain.VideoMetricSnapshot `json:"history"`
 }
 
+type communitySummary struct {
+	Total         int        `json:"total"`
+	Drafts        int        `json:"drafts"`
+	Replied       int        `json:"replied"`
+	LatestCreated *time.Time `json:"latest_created_at,omitempty"`
+}
+
+type communityResponse struct {
+	Summary communitySummary             `json:"summary"`
+	Latest  []domain.CommunityReplyDraft `json:"latest"`
+}
+
 type researchRequest struct {
 	Niche string `json:"niche"`
 	Limit int    `json:"limit"`
@@ -611,6 +633,61 @@ func (a *apiServer) metricsSyncHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	synced, err := a.metrics.SyncUser(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"synced": synced,
+	})
+}
+
+func (a *apiServer) communityRepliesHandler(w http.ResponseWriter, r *http.Request) {
+	if a.repo == nil {
+		http.Error(w, "repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	drafts, err := a.repo.ListCommunityReplyDrafts(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, communityResponse{
+		Summary: summarizeCommunityReplies(drafts),
+		Latest:  drafts,
+	})
+}
+
+func (a *apiServer) communitySyncHandler(w http.ResponseWriter, r *http.Request) {
+	if a.community == nil {
+		http.Error(w, "community unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	synced, err := a.community.SyncUser(r.Context(), userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -684,6 +761,27 @@ func summarizeMetrics(latest []domain.VideoMetricSnapshot) metricsSummary {
 	return summary
 }
 
+func summarizeCommunityReplies(drafts []domain.CommunityReplyDraft) communitySummary {
+	var summary communitySummary
+	summary.Total = len(drafts)
+	for _, draft := range drafts {
+		switch strings.ToLower(strings.TrimSpace(draft.Status)) {
+		case "replied":
+			summary.Replied++
+		default:
+			summary.Drafts++
+		}
+		if draft.CreatedAt.IsZero() {
+			continue
+		}
+		if summary.LatestCreated == nil || draft.CreatedAt.After(*summary.LatestCreated) {
+			created := draft.CreatedAt
+			summary.LatestCreated = &created
+		}
+	}
+	return summary
+}
+
 func newGeneratorServiceFromEnv() (*services.GeneratorService, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	accessToken := os.Getenv("GEMINI_ACCESS_TOKEN")
@@ -701,8 +799,22 @@ func newGeneratorServiceFromEnv() (*services.GeneratorService, error) {
 	}
 
 	branding := services.NewBrandingService(image)
+	affiliate := services.NewAffiliateService()
 	qc := services.NewQualityControlService(apiKey)
-	return services.NewGeneratorService(writer, voice, image, assembler, uploader, branding, qc), nil
+	return services.NewGeneratorService(writer, voice, image, assembler, uploader, branding, affiliate, qc), nil
+}
+
+func newCommunityServiceFromEnv(repo ports.Repository) (*services.CommunityService, error) {
+	if repo == nil {
+		return nil, nil
+	}
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	accessToken := os.Getenv("GEMINI_ACCESS_TOKEN")
+	if apiKey == "" && accessToken == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY or GEMINI_ACCESS_TOKEN must be set")
+	}
+
+	return services.NewCommunityService(repo, adapters.NewGeminiCommentResponder(apiKey)), nil
 }
 
 func newUploaderFromEnv() (ports.Uploader, error) {
@@ -1015,10 +1127,13 @@ func (a *apiServer) runGeneration(userID int, jobID, niche, topic string, destin
 		return
 	}
 
-	description := fmt.Sprintf("#%s #%s #ai #faceless", niche, strings.ReplaceAll(topic, " ", ""))
+	description := story.Description
+	if strings.TrimSpace(description) == "" {
+		description = fmt.Sprintf("#%s #%s #ai #faceless", niche, strings.ReplaceAll(topic, " ", ""))
+	}
 
 	if a.repo != nil {
-		if err := a.repo.UpdateJobArtifact(ctx, jobID, story.Title, description, story.VideoOutput); err != nil {
+		if err := a.repo.UpdateJobArtifact(ctx, jobID, story.Title, description, story.PinComment, story.VideoOutput); err != nil {
 			log.Printf("failed to store job artifact: %v\n", err)
 		}
 	}

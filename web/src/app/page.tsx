@@ -15,6 +15,7 @@ type GenerationJob = {
   topic: string;
   title?: string;
   description?: string;
+  pin_comment?: string;
   video_path?: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   error?: string;
@@ -503,10 +504,15 @@ export default function Dashboard() {
                     {job.status}
                   </span>
                 </div>
-                <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-1">
                     <p className="text-[10px] text-zinc-600 font-bold uppercase tracking-tighter">
                     {formatTime(job.created_at)}
                     </p>
+                    {job.pin_comment && (
+                      <p className="mt-2 text-[10px] font-medium text-fuchsia-300 bg-fuchsia-500/5 p-2 rounded-lg border border-fuchsia-500/10 whitespace-pre-wrap">
+                        {job.pin_comment}
+                      </p>
+                    )}
                     {job.error && <p className="mt-2 text-[10px] font-bold text-red-500 bg-red-500/5 p-2 rounded-lg border border-red-500/10">{job.error}</p>}
                 </div>
               </div>

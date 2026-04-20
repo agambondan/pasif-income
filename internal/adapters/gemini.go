@@ -3,7 +3,9 @@ package adapters
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/agambondan/pasif-income/internal/core/domain"
 	"github.com/google/generative-ai-go/genai"
@@ -19,19 +21,22 @@ func NewGeminiAgent(key string) *GeminiAgent {
 	return &GeminiAgent{apiKey: key}
 }
 
-// Analyze for Clipping (Podcast)
-func (g *GeminiAgent) Analyze(ctx context.Context, transcript string) ([]domain.ClipSegment, error) {
+func geminiClientOptions(apiKey string) []option.ClientOption {
 	var opts []option.ClientOption
 	accessToken := os.Getenv("GEMINI_ACCESS_TOKEN")
 
 	if accessToken != "" {
 		tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
 		opts = append(opts, option.WithTokenSource(tokenSource))
-	} else if g.apiKey != "" {
-		opts = append(opts, option.WithAPIKey(g.apiKey))
+	} else if apiKey != "" {
+		opts = append(opts, option.WithAPIKey(apiKey))
 	}
+	return opts
+}
 
-	client, err := genai.NewClient(ctx, opts...)
+// Analyze for Clipping (Podcast)
+func (g *GeminiAgent) Analyze(ctx context.Context, transcript string) ([]domain.ClipSegment, error) {
+	client, err := genai.NewClient(ctx, geminiClientOptions(g.apiKey)...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,17 +82,7 @@ func NewGeminiWriter(key string) *GeminiWriter {
 }
 
 func (g *GeminiWriter) WriteScript(ctx context.Context, niche, topic string) (*domain.Story, error) {
-	var opts []option.ClientOption
-	accessToken := os.Getenv("GEMINI_ACCESS_TOKEN")
-
-	if accessToken != "" {
-		tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
-		opts = append(opts, option.WithTokenSource(tokenSource))
-	} else if g.apiKey != "" {
-		opts = append(opts, option.WithAPIKey(g.apiKey))
-	}
-
-	client, err := genai.NewClient(ctx, opts...)
+	client, err := genai.NewClient(ctx, geminiClientOptions(g.apiKey)...)
 	if err != nil {
 		return nil, err
 	}
@@ -129,4 +124,71 @@ Output MUST be a JSON object:
 	var story domain.Story
 	err = json.Unmarshal([]byte(jsonStr), &story)
 	return &story, err
+}
+
+type GeminiCommentResponder struct {
+	apiKey string
+}
+
+func NewGeminiCommentResponder(key string) *GeminiCommentResponder {
+	return &GeminiCommentResponder{apiKey: key}
+}
+
+func (g *GeminiCommentResponder) DraftReply(ctx context.Context, niche, topic, videoTitle, commentText, persona string) (string, error) {
+	client, err := genai.NewClient(ctx, geminiClientOptions(g.apiKey)...)
+	if err != nil {
+		return "", err
+	}
+	defer client.Close()
+
+	model := client.GenerativeModel("gemini-1.5-pro")
+	model.ResponseMIMEType = "application/json"
+
+	prompt := fmt.Sprintf(
+		`Act as a community manager for a faceless YouTube channel.
+
+Brand persona: %s
+Niche: %s
+Topic: %s
+Video title: %s
+
+Viewer comment:
+%s
+
+Rules:
+1. Write a short, warm, human reply.
+2. Match the language of the viewer comment when possible.
+3. Do not mention being AI.
+4. Do not add hashtags or affiliate links.
+5. Keep it under 2 sentences unless the comment asks for clarification.
+
+Return JSON only in this shape:
+{"reply":"..."}`,
+		persona, niche, topic, videoTitle, commentText,
+	)
+
+	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	if err != nil {
+		return "", err
+	}
+
+	var jsonStr string
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if text, ok := part.(genai.Text); ok {
+			jsonStr = string(text)
+		}
+	}
+
+	var payload struct {
+		Reply string `json:"reply"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &payload); err != nil {
+		return "", err
+	}
+
+	reply := strings.TrimSpace(payload.Reply)
+	if reply == "" {
+		return "", fmt.Errorf("empty community reply")
+	}
+	return reply, nil
 }

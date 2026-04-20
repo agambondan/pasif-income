@@ -10,6 +10,7 @@ This project automates the conversion of long-form videos into viral short-form 
 - **Self-Hosted**: Docker-based architecture with local transcription and storage.
 - **Distribution Matrix**: Traceable plan for multi-platform and multi-account upload.
 - **Platform Auth**: API upload plus Chromium profile linking for upload destinations.
+- **Community**: AI comment drafts and optional auto-reply for YouTube engagement.
 - **Implementation Status**: Single source of truth for done, current, and planned work.
 
 ## Tech Stack
@@ -46,6 +47,8 @@ This project automates the conversion of long-form videos into viral short-form 
 - `scripts`: Helper scripts (e.g., face tracking).
 - `docs/distribution-matrix.md`: Current target model for publish destinations and dashboard traceability.
 - `docs/metrics.md`: Analytics snapshot flow and dashboard metrics model.
+- `docs/affiliate.md`: Dynamic affiliate insertion and monetization CTA flow.
 - `docs/idea-map.md`: Niche research and trending topic discovery flow.
 - `docs/platform-auth.md`: API-first plus Chromium-profile browser fallback for linking upload accounts.
+- `docs/community.md`: YouTube comment draft reply and optional auto-reply flow.
 - `docs/implementation-status.md`: Current implementation snapshot and next work order.
