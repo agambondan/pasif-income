@@ -16,15 +16,14 @@ func main() {
 	log.Println("--- Podcast Clips Factory Starting ---")
 
 	// 1. Initialize Adapters
-	apiKey := os.Getenv("GEMINI_API_KEY")
-
 	downloader := adapters.NewYtdlpDownloader()
 
-	if apiKey == "" {
-		log.Fatal("ERROR: GEMINI_API_KEY must be set.")
+	if !adapters.HasGeminiCredentials() {
+		log.Fatal("ERROR: GEMINI_API_KEY, GEMINI_ACCESS_TOKEN, or ~/.gemini/oauth_creds.json must be available.")
 	}
 
 	transcriber := adapters.NewWhisperTranscriber(whisperURL())
+	apiKey := os.Getenv("GEMINI_API_KEY")
 	agent := adapters.NewGeminiAgent(apiKey)
 
 	vision := adapters.NewPythonVisionAgent("scripts/face_tracker.py")

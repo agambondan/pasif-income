@@ -67,6 +67,7 @@ func (m *fakeUploader) Upload(ctx context.Context, filePath string, title string
 func TestGenerateContent_Success(t *testing.T) {
 	s := NewGeneratorService(
 		&fakeScriptWriter{},
+		nil,
 		&fakeVoiceGenerator{},
 		&fakeImageGenerator{},
 		&fakeVideoAssembler{},
@@ -89,6 +90,7 @@ func TestGenerateContent_ScriptError(t *testing.T) {
 	expectedErr := errors.New("failed to write script")
 	s := NewGeneratorService(
 		&fakeScriptWriter{err: expectedErr},
+		nil,
 		&fakeVoiceGenerator{},
 		&fakeImageGenerator{},
 		&fakeVideoAssembler{},
@@ -99,7 +101,7 @@ func TestGenerateContent_ScriptError(t *testing.T) {
 	)
 
 	_, err := s.GenerateContent(context.Background(), "motivation", "discipline")
-	if err == nil || err.Error() != "script writer: failed to write script" {
+	if err == nil || err.Error() != "script writer (Gemini & Codex): failed to write script" {
 		t.Errorf("expected script writer error, got %v", err)
 	}
 }

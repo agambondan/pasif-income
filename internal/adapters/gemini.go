@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -13,36 +14,124 @@ import (
 	"google.golang.org/api/option"
 )
 
+const geminiDefaultModel = "gemini-2.5-pro"
+
 type GeminiAgent struct {
 	apiKey string
 }
 
 func NewGeminiAgent(key string) *GeminiAgent {
-	return &GeminiAgent{apiKey: key}
+	return &GeminiAgent{apiKey: strings.TrimSpace(key)}
 }
 
-func geminiClientOptions(apiKey string) []option.ClientOption {
-	var opts []option.ClientOption
-	accessToken := os.Getenv("GEMINI_ACCESS_TOKEN")
+type GeminiWriter struct {
+	apiKey string
+}
 
-	if accessToken != "" {
+func NewGeminiWriter(key string) *GeminiWriter {
+	return &GeminiWriter{apiKey: strings.TrimSpace(key)}
+}
+
+type GeminiCommentResponder struct {
+	apiKey string
+}
+
+func NewGeminiCommentResponder(key string) *GeminiCommentResponder {
+	return &GeminiCommentResponder{apiKey: strings.TrimSpace(key)}
+}
+
+func geminiClientOptions(apiKey string) ([]option.ClientOption, error) {
+	var opts []option.ClientOption
+
+	if accessToken := strings.TrimSpace(os.Getenv("GEMINI_ACCESS_TOKEN")); accessToken != "" {
 		tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
 		opts = append(opts, option.WithTokenSource(tokenSource))
-	} else if apiKey != "" {
+		return opts, nil
+	}
+
+	if accessToken := strings.TrimSpace(os.Getenv("GEMINI_ACCESS_TOKEN_FROM_OAUTH_CREDS")); accessToken != "" {
+		tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
+		opts = append(opts, option.WithTokenSource(tokenSource))
+		return opts, nil
+	}
+
+	if accessToken := readGeminiOAuthToken(); accessToken != "" {
+		tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
+		opts = append(opts, option.WithTokenSource(tokenSource))
+		return opts, nil
+	}
+
+	if token, ok := geminiTokenFromJSON(strings.TrimSpace(apiKey)); ok {
+		tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+		opts = append(opts, option.WithTokenSource(tokenSource))
+		return opts, nil
+	}
+
+	if apiKey = strings.TrimSpace(apiKey); apiKey != "" {
 		opts = append(opts, option.WithAPIKey(apiKey))
 	}
-	return opts
+
+	return opts, nil
 }
 
-// Analyze for Clipping (Podcast)
+func geminiTokenFromJSON(raw string) (string, bool) {
+	if raw == "" || !strings.HasPrefix(raw, "{") {
+		return "", false
+	}
+
+	var parsed struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return "", false
+	}
+
+	token := strings.TrimSpace(parsed.Token)
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
+func newGeminiClient(ctx context.Context, apiKey string) (*genai.Client, error) {
+	opts, err := geminiClientOptions(apiKey)
+	if err != nil {
+		return nil, err
+	}
+	if len(opts) == 0 {
+		return nil, errors.New("gemini credentials unavailable")
+	}
+	return genai.NewClient(ctx, opts...)
+}
+
+func geminiResponseText(resp *genai.GenerateContentResponse) (string, error) {
+	if resp == nil || len(resp.Candidates) == 0 || resp.Candidates[0] == nil || resp.Candidates[0].Content == nil {
+		return "", errors.New("empty gemini response")
+	}
+
+	var text strings.Builder
+	for _, part := range resp.Candidates[0].Content.Parts {
+		switch v := part.(type) {
+		case genai.Text:
+			text.WriteString(string(v))
+		}
+	}
+
+	output := strings.TrimSpace(text.String())
+	if output == "" {
+		return "", errors.New("empty gemini response text")
+	}
+	return output, nil
+}
+
 func (g *GeminiAgent) Analyze(ctx context.Context, transcript string) ([]domain.ClipSegment, error) {
-	client, err := genai.NewClient(ctx, geminiClientOptions(g.apiKey)...)
+	client, err := newGeminiClient(ctx, g.apiKey)
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
 
-	model := client.GenerativeModel("gemini-1.5-pro")
+	model := client.GenerativeModel(geminiDefaultModel)
 	model.ResponseMIMEType = "application/json"
 
 	prompt := `Act as a Viral Marketing Expert. Analyze the following transcript and identify the most engaging segments for short-form clips.
@@ -60,38 +149,29 @@ Transcript: ` + transcript
 		return nil, err
 	}
 
-	var jsonStr string
-	for _, part := range resp.Candidates[0].Content.Parts {
-		if text, ok := part.(genai.Text); ok {
-			jsonStr = string(text)
-		}
+	jsonText, err := geminiResponseText(resp)
+	if err != nil {
+		return nil, err
 	}
 
 	var segments []domain.ClipSegment
-	err = json.Unmarshal([]byte(jsonStr), &segments)
-	return segments, err
-}
-
-// GeminiWriter for Creation (Faceless)
-type GeminiWriter struct {
-	apiKey string
-}
-
-func NewGeminiWriter(key string) *GeminiWriter {
-	return &GeminiWriter{apiKey: key}
+	if err := json.Unmarshal([]byte(extractJSONPayload(jsonText)), &segments); err != nil {
+		return nil, fmt.Errorf("decode clip segments: %w", err)
+	}
+	return segments, nil
 }
 
 func (g *GeminiWriter) WriteScript(ctx context.Context, niche, topic string) (*domain.Story, error) {
-	client, err := genai.NewClient(ctx, geminiClientOptions(g.apiKey)...)
+	client, err := newGeminiClient(ctx, g.apiKey)
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
 
-	model := client.GenerativeModel("gemini-1.5-pro")
+	model := client.GenerativeModel(geminiDefaultModel)
 	model.ResponseMIMEType = "application/json"
 
-	prompt := `Act as a Professional Faceless Channel Content Creator. 
+	prompt := `Act as a Professional Faceless Channel Content Creator.
 Niche: ` + niche + `
 Topic: ` + topic + `
 
@@ -100,7 +180,7 @@ STRICT RULES:
 2. NO WOMEN.
 3. STRICT ISLAMIC SHARIA PRINCIPLES.
 
-Create a viral script for a Short video (30-60s). 
+Create a viral script for a Short video (30-60s).
 Output MUST be a JSON object:
 {
   "title": "Viral Title",
@@ -114,34 +194,26 @@ Output MUST be a JSON object:
 		return nil, err
 	}
 
-	var jsonStr string
-	for _, part := range resp.Candidates[0].Content.Parts {
-		if text, ok := part.(genai.Text); ok {
-			jsonStr = string(text)
-		}
+	jsonText, err := geminiResponseText(resp)
+	if err != nil {
+		return nil, err
 	}
 
 	var story domain.Story
-	err = json.Unmarshal([]byte(jsonStr), &story)
-	return &story, err
-}
-
-type GeminiCommentResponder struct {
-	apiKey string
-}
-
-func NewGeminiCommentResponder(key string) *GeminiCommentResponder {
-	return &GeminiCommentResponder{apiKey: key}
+	if err := json.Unmarshal([]byte(extractJSONPayload(jsonText)), &story); err != nil {
+		return nil, fmt.Errorf("decode story: %w", err)
+	}
+	return &story, nil
 }
 
 func (g *GeminiCommentResponder) DraftReply(ctx context.Context, niche, topic, videoTitle, commentText, persona string) (string, error) {
-	client, err := genai.NewClient(ctx, geminiClientOptions(g.apiKey)...)
+	client, err := newGeminiClient(ctx, g.apiKey)
 	if err != nil {
 		return "", err
 	}
 	defer client.Close()
 
-	model := client.GenerativeModel("gemini-1.5-pro")
+	model := client.GenerativeModel(geminiDefaultModel)
 	model.ResponseMIMEType = "application/json"
 
 	prompt := fmt.Sprintf(
@@ -172,18 +244,16 @@ Return JSON only in this shape:
 		return "", err
 	}
 
-	var jsonStr string
-	for _, part := range resp.Candidates[0].Content.Parts {
-		if text, ok := part.(genai.Text); ok {
-			jsonStr = string(text)
-		}
+	jsonText, err := geminiResponseText(resp)
+	if err != nil {
+		return "", err
 	}
 
 	var payload struct {
 		Reply string `json:"reply"`
 	}
-	if err := json.Unmarshal([]byte(jsonStr), &payload); err != nil {
-		return "", err
+	if err := json.Unmarshal([]byte(extractJSONPayload(jsonText)), &payload); err != nil {
+		return "", fmt.Errorf("decode reply: %w", err)
 	}
 
 	reply := strings.TrimSpace(payload.Reply)

@@ -17,13 +17,13 @@ func main() {
 
 	// Get API Key from env
 	apiKey := os.Getenv("GEMINI_API_KEY")
-	accessToken := os.Getenv("GEMINI_ACCESS_TOKEN")
-	if apiKey == "" && accessToken == "" {
-		log.Fatal("ERROR: GEMINI_API_KEY or GEMINI_ACCESS_TOKEN not set.")
+	if !adapters.HasGeminiCredentials() && !adapters.HasCodexCredentials() {
+		log.Fatal("ERROR: no Gemini or Codex credentials available.")
 	}
 
 	// 1. Initialize Adapters
 	writer := adapters.NewGeminiWriter(apiKey)
+	codexWriter := adapters.NewCodexWriter()
 	voice := adapters.NewVoiceAdapter("en-US-Standard-A")
 	image := adapters.NewStableDiffusionAdapter(os.Getenv("SD_API_URL"))
 	assembler := adapters.NewFFmpegAssembler()
@@ -33,7 +33,7 @@ func main() {
 	}
 
 	// 2. Initialize Service
-	service := services.NewGeneratorService(writer, voice, image, assembler, uploader, services.NewBrandingService(image), services.NewAffiliateService(), services.NewQualityControlService(apiKey))
+	service := services.NewGeneratorService(writer, codexWriter, voice, image, assembler, uploader, services.NewBrandingService(image), services.NewAffiliateService(), services.NewQualityControlService(apiKey))
 
 	// 3. Execution
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)

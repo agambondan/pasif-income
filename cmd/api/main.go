@@ -81,9 +81,9 @@ func main() {
 	}
 	api.community = community
 
-	if os.Getenv("GEMINI_API_KEY") == "" {
-		log.Println("CRITICAL ERROR: GEMINI_API_KEY is not set. Generation will FAIL.")
-		log.Println("Please set it in your .env file or environment variables.")
+	if !adapters.HasGeminiCredentials() && !adapters.HasCodexCredentials() {
+		log.Println("CRITICAL ERROR: no Gemini or Codex credentials were found.")
+		log.Println("Please set GEMINI_API_KEY, GEMINI_ACCESS_TOKEN, OPENAI_API_KEY, or mount the local auth files.")
 	}
 
 	// Create default user for testing
@@ -792,12 +792,12 @@ func summarizeCommunityReplies(drafts []domain.CommunityReplyDraft) communitySum
 
 func newGeneratorServiceFromEnv() (*services.GeneratorService, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
-	accessToken := os.Getenv("GEMINI_ACCESS_TOKEN")
-	if apiKey == "" && accessToken == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY or GEMINI_ACCESS_TOKEN must be set")
+	if !adapters.HasGeminiCredentials() && !adapters.HasCodexCredentials() {
+		return nil, fmt.Errorf("no Gemini or Codex credentials available")
 	}
 
 	writer := adapters.NewGeminiWriter(apiKey)
+	codexWriter := adapters.NewCodexWriter()
 	voice := adapters.NewVoiceAdapter("en-US-Standard-A")
 	image := adapters.NewStableDiffusionAdapter(os.Getenv("SD_API_URL"))
 	assembler := adapters.NewFFmpegAssembler()
@@ -809,7 +809,7 @@ func newGeneratorServiceFromEnv() (*services.GeneratorService, error) {
 	branding := services.NewBrandingService(image)
 	affiliate := services.NewAffiliateService()
 	qc := services.NewQualityControlService(apiKey)
-	return services.NewGeneratorService(writer, voice, image, assembler, uploader, branding, affiliate, qc), nil
+	return services.NewGeneratorService(writer, codexWriter, voice, image, assembler, uploader, branding, affiliate, qc), nil
 }
 
 func newCommunityServiceFromEnv(repo ports.Repository) (*services.CommunityService, error) {
@@ -817,9 +817,8 @@ func newCommunityServiceFromEnv(repo ports.Repository) (*services.CommunityServi
 		return nil, nil
 	}
 	apiKey := os.Getenv("GEMINI_API_KEY")
-	accessToken := os.Getenv("GEMINI_ACCESS_TOKEN")
-	if apiKey == "" && accessToken == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY or GEMINI_ACCESS_TOKEN must be set")
+	if !adapters.HasGeminiCredentials() {
+		return nil, fmt.Errorf("no Gemini credentials available")
 	}
 
 	return services.NewCommunityService(repo, adapters.NewGeminiCommentResponder(apiKey)), nil

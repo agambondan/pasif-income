@@ -28,7 +28,11 @@ This project automates the conversion of long-form videos into viral short-form 
     - Install Python dependencies: `pip install mediapipe opencv-python numpy`.
 2.  **Environment Variables**:
     - `GEMINI_API_KEY`: Your Google Gemini API Key.
+    - `GEMINI_ACCESS_TOKEN`: Optional Gemini OAuth token.
+    - `OPENAI_API_KEY`: Optional Codex/OpenAI API key used for script fallback.
+    - `OPENAI_ACCESS_TOKEN`: Optional Codex OAuth token.
     - `VIDEO_URL`: (Optional) The URL of the video to process.
+    - If you mount local auth files, the adapters will also read `~/.gemini/oauth_creds.json` and `~/.codex/auth.json`.
 3.  **Run Services**:
     ```bash
     docker-compose up -d

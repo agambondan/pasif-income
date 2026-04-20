@@ -18,6 +18,12 @@ Pabrik klip pendek dari video durasi panjang (podcast/seminar).
 - **Orchestration**: Go Backend with FFmpeg.
 - **Infrastructure**: Self-hosted with MinIO & PostgreSQL.
 
+## Auth & Runtime
+
+- Gemini adapter menerima `GEMINI_API_KEY`, `GEMINI_ACCESS_TOKEN`, atau auth file lokal di `~/.gemini/oauth_creds.json`.
+- Codex adapter menerima `OPENAI_API_KEY`, `OPENAI_ACCESS_TOKEN`, atau auth file lokal di `~/.codex/auth.json`.
+- `cmd/creator`, `cmd/api`, dan `cmd/clipper` sudah membaca credential lokal itu saat startup.
+
 ## Requirement Umum
 - Go 1.21+
 - FFmpeg
