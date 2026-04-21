@@ -24,14 +24,6 @@ func NewChromiumRunnerFromEnv() *ChromiumRunner {
 }
 
 func (r *ChromiumRunner) Open(ctx context.Context, profilePath, targetURL string) error {
-	return r.open(ctx, profilePath, targetURL, headlessEnabled(), browserWaitDuration())
-}
-
-func (r *ChromiumRunner) OpenLogin(ctx context.Context, profilePath, targetURL string) error {
-	return r.open(ctx, profilePath, targetURL, loginHeadlessEnabled(), browserLoginWaitDuration())
-}
-
-func (r *ChromiumRunner) open(ctx context.Context, profilePath, targetURL string, headless bool, waitFor time.Duration) error {
 	if profilePath == "" {
 		return fmt.Errorf("profile path is required")
 	}
@@ -53,8 +45,9 @@ func (r *ChromiumRunner) open(ctx context.Context, profilePath, targetURL string
 		"--no-default-browser-check",
 		"--disable-dev-shm-usage",
 		"--new-window",
+		"--ignore-certificate-errors",
 	}
-	if headless {
+	if headlessEnabled() {
 		args = append(args, "--headless=new")
 	}
 	args = append(args, targetURL)
@@ -68,6 +61,7 @@ func (r *ChromiumRunner) open(ctx context.Context, profilePath, targetURL string
 		return err
 	}
 
+	waitFor := browserWaitDuration()
 	timer := time.NewTimer(waitFor)
 	defer timer.Stop()
 
@@ -111,7 +105,16 @@ func (r *ChromiumRunner) AutomateUpload(ctx context.Context, profilePath, target
 		chromedp.NoDefaultBrowserCheck,
 		chromedp.WindowSize(1440, 960),
 		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("ignore-certificate-errors", true),
+		chromedp.Flag("no-sandbox", true),
 	)
+	
+	if waylandEnabled() {
+		allocOpts = append(allocOpts,
+			chromedp.Flag("ozone-platform", "wayland"),
+			chromedp.Flag("enable-features", "UseOzonePlatform"),
+		)
+	}
 	if headlessEnabled() {
 		allocOpts = append(allocOpts, chromedp.Headless)
 	}
@@ -200,6 +203,10 @@ func headlessEnabled() bool {
 	return runtime.GOOS != "darwin" || value != ""
 }
 
+func waylandEnabled() bool {
+	return os.Getenv("XDG_SESSION_TYPE") == "wayland"
+}
+
 func browserWaitDuration() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("BROWSER_WAIT_SECONDS"))
 	if raw == "" {
@@ -212,29 +219,6 @@ func browserWaitDuration() time.Duration {
 	return duration
 }
 
-func browserLoginWaitDuration() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("BROWSER_LOGIN_WAIT_SECONDS"))
-	if raw == "" {
-		return 5 * time.Minute
-	}
-	duration, err := time.ParseDuration(raw + "s")
-	if err != nil {
-		return 5 * time.Minute
-	}
-	return duration
-}
-
-func loginHeadlessEnabled() bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv("BROWSER_HEADLESS_CONNECT")))
-	if value == "true" || value == "1" {
-		return true
-	}
-	if value == "false" || value == "0" {
-		return false
-	}
-	return false
-}
-
 func killProcess(cmd *exec.Cmd) error {
 	if cmd.Process == nil {
 		return nil
@@ -244,28 +228,6 @@ func killProcess(cmd *exec.Cmd) error {
 	}
 	_, _ = cmd.Process.Wait()
 	return nil
-}
-
-func browserTargetURL(platformID string) string {
-	switch platformID {
-	case "youtube":
-		if url := strings.TrimSpace(os.Getenv("YOUTUBE_UPLOAD_URL")); url != "" {
-			return url
-		}
-		return "https://www.youtube.com/upload"
-	case "tiktok":
-		if url := strings.TrimSpace(os.Getenv("TIKTOK_UPLOAD_URL")); url != "" {
-			return url
-		}
-		return "https://www.tiktok.com/upload?lang=en"
-	case "instagram":
-		if url := strings.TrimSpace(os.Getenv("INSTAGRAM_UPLOAD_URL")); url != "" {
-			return url
-		}
-		return "https://www.instagram.com/create/select/"
-	default:
-		return ""
-	}
 }
 
 func browserProfileMetadataPath(profilePath string) string {
@@ -324,340 +286,4 @@ func browserAutomationTimeout() time.Duration {
 		return 2 * time.Minute
 	}
 	return duration
-}
-
-func waitAndSetUploadFile(ctx context.Context, platformID, filePath string) error {
-	selectors := uploadFileSelectors(platformID)
-	for _, selector := range selectors {
-		if err := chromedp.Run(ctx,
-			chromedp.WaitVisible(selector, chromedp.ByQuery),
-			chromedp.SetUploadFiles(selector, []string{filePath}, chromedp.ByQuery),
-		); err == nil {
-			return nil
-		}
-	}
-	return fmt.Errorf("upload file input not found")
-}
-
-func automateYouTubeUpload(ctx context.Context, filePath, title, description string, progress func(string)) error {
-	if progress != nil {
-		progress("attaching_file")
-	}
-	if err := waitAndSetUploadFile(ctx, "youtube", filePath); err != nil {
-		return err
-	}
-
-	if progress != nil {
-		progress("waiting_for_form")
-	}
-	if err := waitForAnyVisible(ctx, append(titleSelectors("youtube"), descriptionSelectors("youtube")...)); err != nil {
-		return fmt.Errorf("youtube upload form not ready: %w", err)
-	}
-
-	if progress != nil {
-		progress("filling_metadata")
-	}
-	if err := setFirstValue(ctx, titleSelectors("youtube"), title); err != nil {
-		log.Printf("youtube title field not found: %v\n", err)
-	}
-	if err := setFirstValue(ctx, descriptionSelectors("youtube"), description); err != nil {
-		log.Printf("youtube description field not found: %v\n", err)
-	}
-
-	if progress != nil {
-		progress("setting_audience")
-	}
-	_ = clickFirstTextMatch(ctx, []string{
-		"no, it's not made for kids",
-		"no, this is not made for kids",
-		"made for kids",
-	})
-
-	if progress != nil {
-		progress("advancing_steps")
-	}
-	if err := clickFirstTextMatch(ctx, []string{"Next"}); err != nil {
-		return fmt.Errorf("youtube next button not found: %w", err)
-	}
-	if err := waitShort(ctx); err != nil {
-		return err
-	}
-	_ = clickFirstTextMatch(ctx, []string{"Next"})
-	_ = waitShort(ctx)
-	_ = clickFirstTextMatch(ctx, []string{"Next"})
-	_ = waitShort(ctx)
-
-	if progress != nil {
-		progress("publishing")
-	}
-	if err := clickFirstTextMatch(ctx, []string{"Publish", "Save"}); err != nil {
-		return fmt.Errorf("youtube publish button not found: %w", err)
-	}
-
-	_ = waitShort(ctx)
-	_ = clickFirstTextMatch(ctx, []string{"Publish", "Save"})
-	return nil
-}
-
-func automateTikTokUpload(ctx context.Context, filePath, title, description string, progress func(string)) error {
-	if progress != nil {
-		progress("opening_upload_flow")
-	}
-	if err := clickFirstTextMatch(ctx, uploadActionTerms("tiktok")); err != nil {
-		return fmt.Errorf("tiktok upload action not found: %w", err)
-	}
-
-	if progress != nil {
-		progress("attaching_file")
-	}
-	if err := waitAndSetUploadFile(ctx, "tiktok", filePath); err != nil {
-		return err
-	}
-
-	if progress != nil {
-		progress("filling_metadata")
-	}
-	_ = setFirstValue(ctx, titleSelectors("tiktok"), title)
-	_ = setFirstValue(ctx, descriptionSelectors("tiktok"), description)
-
-	if progress != nil {
-		progress("publishing")
-	}
-	if err := clickFirstTextMatch(ctx, publishActionTerms("tiktok")); err != nil {
-		return fmt.Errorf("tiktok publish action not found: %w", err)
-	}
-	return nil
-}
-
-func automateInstagramUpload(ctx context.Context, filePath, title, description string, progress func(string)) error {
-	if progress != nil {
-		progress("opening_upload_flow")
-	}
-	if err := clickFirstTextMatch(ctx, uploadActionTerms("instagram")); err != nil {
-		return fmt.Errorf("instagram upload action not found: %w", err)
-	}
-
-	if progress != nil {
-		progress("attaching_file")
-	}
-	if err := waitAndSetUploadFile(ctx, "instagram", filePath); err != nil {
-		return err
-	}
-
-	if progress != nil {
-		progress("filling_metadata")
-	}
-	caption := description
-	if strings.TrimSpace(caption) == "" {
-		caption = title
-	}
-	_ = setFirstValue(ctx, titleSelectors("instagram"), caption)
-	_ = setFirstValue(ctx, descriptionSelectors("instagram"), description)
-
-	if progress != nil {
-		progress("publishing")
-	}
-	if err := clickFirstTextMatch(ctx, publishActionTerms("instagram")); err != nil {
-		return fmt.Errorf("instagram publish action not found: %w", err)
-	}
-	return nil
-}
-
-func automateGenericUpload(ctx context.Context, platformID, filePath, title, description string, progress func(string)) error {
-	if progress != nil {
-		progress("opening_upload_flow")
-	}
-	if err := clickFirstTextMatch(ctx, uploadActionTerms(platformID)); err != nil {
-		return fmt.Errorf("upload action not found for %s: %w", platformID, err)
-	}
-
-	if progress != nil {
-		progress("attaching_file")
-	}
-	if err := waitAndSetUploadFile(ctx, platformID, filePath); err != nil {
-		return err
-	}
-
-	if progress != nil {
-		progress("filling_metadata")
-	}
-	_ = setFirstValue(ctx, titleSelectors(platformID), title)
-	_ = setFirstValue(ctx, descriptionSelectors(platformID), description)
-
-	if progress != nil {
-		progress("publishing")
-	}
-	if err := clickFirstTextMatch(ctx, publishActionTerms(platformID)); err != nil {
-		return fmt.Errorf("publish action not found for %s: %w", platformID, err)
-	}
-	return nil
-}
-
-func waitForAnyVisible(ctx context.Context, selectors []string) error {
-	for _, selector := range selectors {
-		if err := chromedp.Run(ctx, chromedp.WaitVisible(selector, chromedp.ByQuery)); err == nil {
-			return nil
-		}
-	}
-	return fmt.Errorf("no matching visible element found")
-}
-
-func waitShort(ctx context.Context) error {
-	timer := time.NewTimer(1500 * time.Millisecond)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
-func setFirstValue(ctx context.Context, selectors []string, value string) error {
-	for _, selector := range selectors {
-		if err := chromedp.Run(ctx,
-			chromedp.SetValue(selector, value, chromedp.ByQuery),
-			chromedp.Blur(selector, chromedp.ByQuery),
-		); err == nil {
-			return nil
-		}
-	}
-	return fmt.Errorf("no matching field found")
-}
-
-func clickFirstTextMatch(ctx context.Context, terms []string) error {
-	for _, term := range terms {
-		js := fmt.Sprintf(`(() => {
-			const needle = %q;
-			const nodes = Array.from(document.querySelectorAll('button, a, tp-yt-paper-button, ytcp-button, div[role="button"], span[role="button"], input[type="button"], input[type="submit"]'));
-			const match = nodes.find((el) => ((el.innerText || el.textContent || el.value || '').trim().toLowerCase().includes(needle)));
-			if (match) {
-				match.click();
-				return true;
-			}
-			return false;
-		})()`, strings.ToLower(term))
-		var clicked bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(js, &clicked)); err == nil && clicked {
-			return nil
-		}
-	}
-	return fmt.Errorf("no matching text action found")
-}
-
-func uploadActionTerms(platformID string) []string {
-	switch platformID {
-	case "youtube":
-		return []string{
-			"Create",
-			"Upload videos",
-			"Create upload",
-			"Create new video",
-			"Select files",
-			"Upload",
-		}
-	case "tiktok":
-		return []string{"Upload", "Select file", "Choose file", "Post", "Import", "Add video"}
-	case "instagram":
-		return []string{"New post", "Select from computer", "Choose from computer", "Create new", "Create", "Next"}
-	default:
-		return []string{"Upload", "Select file"}
-	}
-}
-
-func publishActionTerms(platformID string) []string {
-	switch platformID {
-	case "youtube":
-		return []string{"Publish", "Done", "Next", "Save", "Visibility"}
-	case "tiktok":
-		return []string{"Post", "Publish", "Continue", "Upload"}
-	case "instagram":
-		return []string{"Share", "Publish", "Next", "Continue", "Share now"}
-	default:
-		return []string{"Publish", "Share", "Post"}
-	}
-}
-
-func titleSelectors(platformID string) []string {
-	switch platformID {
-	case "youtube":
-		return []string{
-			"textarea#title-textarea",
-			"input#title-textarea",
-			"textarea[aria-label*='Add a title']",
-			"input[aria-label*='Add a title']",
-			"input[aria-label*='title']",
-			"textarea[aria-label*='title']",
-			"input[name='title']",
-		}
-	case "tiktok":
-		return []string{
-			"input[placeholder*='title']",
-			"textarea[placeholder*='title']",
-			"input[aria-label*='title']",
-			"textarea[aria-label*='title']",
-			"input[type='text']",
-		}
-	case "instagram":
-		return []string{
-			"textarea[placeholder*='Write a caption']",
-			"textarea[placeholder*='caption']",
-			"textarea[aria-label*='caption']",
-			"textarea",
-		}
-	default:
-		return []string{"input[aria-label*='title']", "textarea[aria-label*='title']", "textarea"}
-	}
-}
-
-func descriptionSelectors(platformID string) []string {
-	switch platformID {
-	case "youtube":
-		return []string{
-			"ytcp-social-suggestions-textbox#description-textarea",
-			"textarea#description-textarea",
-			"textarea[aria-label*='Tell viewers about your video']",
-			"textarea[aria-label*='description']",
-			"textarea[placeholder*='description']",
-			"textarea",
-		}
-	case "tiktok":
-		return []string{"textarea[placeholder*='description']", "textarea[aria-label*='description']", "textarea"}
-	case "instagram":
-		return []string{"textarea[placeholder*='caption']", "textarea[aria-label*='caption']", "textarea"}
-	default:
-		return []string{"textarea[aria-label*='description']", "textarea"}
-	}
-}
-
-func uploadFileSelectors(platformID string) []string {
-	base := []string{
-		"input[type=file]",
-		"input[name=file]",
-		"input[type='file'][accept*='video']",
-	}
-	switch platformID {
-	case "youtube":
-		return append([]string{
-			"input[type=file]",
-			"input[accept*='video']",
-			"input[accept*='video/*']",
-			"input[type='file'][multiple]",
-		}, base...)
-	case "tiktok":
-		return append([]string{
-			"input[type=file]",
-			"input[accept*='video']",
-			"input[accept*='video/*']",
-		}, base...)
-	case "instagram":
-		return append([]string{
-			"input[type=file]",
-			"input[accept*='video']",
-			"input[accept*='image']",
-			"input[accept*='video/*']",
-		}, base...)
-	default:
-		return base
-	}
 }

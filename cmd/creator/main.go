@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/agambondan/pasif-income/internal/adapters"
@@ -15,6 +17,15 @@ import (
 func main() {
 	log.Println("--- Faceless Content Generator Starting ---")
 
+	voiceTypeFlag := flag.String("voice-type", "", "voice preset id for gTTS, e.g. en-US-Standard-A")
+	listVoiceTypesFlag := flag.Bool("list-voice-types", false, "list supported voice presets and exit")
+	flag.Parse()
+
+	if *listVoiceTypesFlag {
+		printSupportedVoiceTypes()
+		return
+	}
+
 	// Get API Key from env
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if !adapters.HasGeminiCredentials() && !adapters.HasCodexCredentials() {
@@ -24,7 +35,8 @@ func main() {
 	// 1. Initialize Adapters
 	writer := adapters.NewGeminiWriter(apiKey)
 	codexWriter := adapters.NewCodexWriter()
-	voice := adapters.NewVoiceAdapter("en-US-Standard-A")
+	voiceType := resolveVoiceType(*voiceTypeFlag)
+	voice := adapters.NewVoiceAdapter(voiceType)
 	image := adapters.NewStableDiffusionAdapter(os.Getenv("SD_API_URL"))
 	assembler := adapters.NewFFmpegAssembler()
 	uploader, err := newUploaderFromEnv()
@@ -49,7 +61,7 @@ func main() {
 	}
 
 	log.Printf("Starting generator for Niche: %s, Topic: %s\n", niche, topic)
-	story, err := service.GenerateContent(ctx, niche, topic)
+	story, err := service.GenerateContent(ctx, niche, topic, voiceType)
 	if err != nil {
 		log.Fatalf("Generation failed: %v", err)
 	}
@@ -82,4 +94,31 @@ func newUploaderFromEnv() (ports.Uploader, error) {
 	}
 
 	return uploader, nil
+}
+
+func defaultVoiceTypeFromEnv() string {
+	if voiceType := strings.TrimSpace(os.Getenv("VOICE_TYPE")); voiceType != "" {
+		return voiceType
+	}
+	return "en-US-Standard-A"
+}
+
+func resolveVoiceType(flagValue string) string {
+	if voiceType := strings.TrimSpace(flagValue); voiceType != "" {
+		if profile, ok := adapters.ResolveVoiceProfile(voiceType); ok {
+			return profile.ID
+		}
+		log.Printf("Warning: unsupported voice type %q, falling back to default", voiceType)
+		return defaultVoiceTypeFromEnv()
+	}
+	return defaultVoiceTypeFromEnv()
+}
+
+func printSupportedVoiceTypes() {
+	profiles := adapters.SupportedVoiceProfiles()
+	fmt.Println("Supported voice presets:")
+	for _, profile := range profiles {
+		fmt.Printf("- %s | %s | lang=%s | tld=%s\n", profile.ID, profile.Label, profile.Language, profile.TLD)
+	}
+	fmt.Printf("Default: %s\n", defaultVoiceTypeFromEnv())
 }

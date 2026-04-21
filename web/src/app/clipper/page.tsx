@@ -1,76 +1,44 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
-type ClipJob = {
+type ConnectedAccount = {
     id: string;
-    niche: string;
-    topic: string;
-    video_url?: string;
-    status: 'queued' | 'running' | 'completed' | 'failed';
-    error?: string;
-    created_at?: string;
-    updated_at?: string;
+    platform_id: string;
+    display_name: string;
 };
 
 export default function VideoClipper() {
     const [videoUrl, setVideoUrl] = useState("");
     const [isProcessing, setIsProcessing] = useState(false);
     const [status, setStatus] = useState<string | null>(null);
-    const [job, setJob] = useState<ClipJob | null>(null);
-
-    const refreshJob = useCallback(async (jobId: string) => {
-        const res = await fetch(`/api/jobs/${jobId}`, {
-            credentials: "include",
-        });
-        if (!res.ok) {
-            return null;
-        }
-        const data = (await res.json()) as ClipJob;
-        setJob(data);
-        if (data.status === "running") {
-            setStatus(`Clipping job ${data.id} is processing the footage...`);
-        } else if (data.status === "completed") {
-            setStatus(`Clipping job ${data.id} completed. Check the review queue.`);
-        } else if (data.status === "failed") {
-            setStatus(
-                `Clipping job ${data.id} failed${data.error ? `: ${data.error}` : ""}`,
-            );
-        } else {
-            setStatus(`Clipping job ${data.id} queued.`);
-        }
-        return data;
-    }, []);
+    const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
+    const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
 
     useEffect(() => {
-        if (!job?.id) {
-            return;
-        }
+        let cancelled = false;
 
-        let stopped = false;
-        const tick = async () => {
-            if (stopped) {
-                return;
-            }
-            const next = await refreshJob(job.id);
-            if (stopped || !next) {
-                return;
-            }
-            if (next.status === "completed" || next.status === "failed") {
-                stopped = true;
+        const fetchAccounts = async () => {
+            try {
+                const res = await fetch(`/api/accounts`, { credentials: "include" });
+                if (!res.ok) {
+                    return;
+                }
+                const data = await res.json();
+                if (!cancelled) {
+                    setAccounts(data || []);
+                }
+            } catch (err) {
+                console.error("Failed to fetch accounts:", err);
             }
         };
 
-        void tick();
-        const timer = window.setInterval(() => {
-            void tick();
-        }, 5000);
+        void fetchAccounts();
 
         return () => {
-            stopped = true;
-            window.clearInterval(timer);
+            cancelled = true;
         };
-    }, [job?.id, refreshJob]);
+    }, []);
 
     const startClipping = async () => {
         try {
@@ -78,48 +46,59 @@ export default function VideoClipper() {
                 setStatus("Video URL is required");
                 return;
             }
+            if (selectedAccounts.length === 0) {
+                setStatus("Select at least one destination account");
+                return;
+            }
+
             setIsProcessing(true);
             setStatus(null);
-            setJob(null);
+
+            const destinations = selectedAccounts.map((id) => {
+                const acc = accounts.find((a) => a.id === id);
+                return {
+                    platform: acc?.platform_id || "unknown",
+                    account_id: id,
+                };
+            });
 
             const res = await fetch(`/api/generate`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({
-                    niche: "clipping",
+                body: JSON.stringify({ 
+                    niche: "clipping", 
                     topic: "podcast-factory",
                     video_url: videoUrl,
+                    destinations
                 }),
             });
 
-            if (!res.ok) {
-                throw new Error(await res.text());
+            if (res.ok) {
+                const data = await res.json();
+                setStatus(`Clipping job ${data.id} initiated. AI is analyzing segments for ${destinations.length} destinations.`);
+                setVideoUrl("");
+                setSelectedAccounts([]);
+            } else {
+                const errText = await res.text();
+                setStatus(`Failed: ${errText || "Unknown error"}`);
             }
-
-            const data = (await res.json()) as ClipJob;
-            setJob(data);
-            setStatus(`Clipping job ${data.id} queued. Waiting for backend pipeline...`);
         } catch (err) {
             console.error("Clipping error:", err);
-            setStatus(
-                err instanceof Error
-                    ? err.message
-                    : "Error connecting to production pipeline.",
-            );
+            setStatus("Error connecting to production pipeline.");
         } finally {
             setIsProcessing(false);
         }
     };
 
     return (
-        <div className='space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700'>
+        <div className='space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pt-4 pb-10'>
             <div className='border-l-4 border-emerald-500 pl-6'>
                 <h2 className='text-4xl font-black text-white tracking-tighter uppercase'>Podcast Clips Factory</h2>
                 <p className='text-zinc-500 mt-2 font-medium'>Transform long-form videos into viral vertical clips using Vision AI.</p>
             </div>
 
-            <div className='max-w-4xl'>
+            <div className='w-full'>
                 <div className='bg-card border border-white/5 rounded-[3rem] p-12 shadow-2xl relative overflow-hidden group'>
                     <div className='absolute -top-24 -right-24 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl group-hover:bg-emerald-500/10 transition-colors'></div>
                     
@@ -132,7 +111,7 @@ export default function VideoClipper() {
                             </div>
                         </div>
 
-                        <div className='space-y-8'>
+                        <div className='space-y-10'>
                             <div className='space-y-3'>
                                 <label className='text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] ml-2'>Video Source URL</label>
                                 <input
@@ -141,22 +120,58 @@ export default function VideoClipper() {
                                     className='w-full rounded-[1.5rem] border border-white/10 bg-black/40 px-8 py-6 text-white font-bold outline-none transition-all focus:border-emerald-500 focus:ring-8 focus:ring-emerald-500/5 placeholder:text-zinc-700'
                                     placeholder='Paste YouTube link or local storage path...'
                                 />
+                                <div className='space-y-2 rounded-2xl border border-white/5 bg-black/20 px-4 py-3'>
+                                    <p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
+                                        Accepted sources: YouTube URL or direct file path accessible from the backend.
+                                    </p>
+                                    <p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
+                                        Select at least one connected destination account before starting.
+                                    </p>
+                                    <p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
+                                        The job will run through the authenticated backend session.
+                                    </p>
+                                </div>
                             </div>
 
-                        <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
-                            <div className='bg-zinc-900/50 p-6 rounded-2xl border border-white/5'>
-                                <p className='text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2'>Analysis</p>
-                                <p className='text-xs font-bold text-zinc-300 uppercase'>Backend Strategist</p>
+                            {/* Distribution Matrix Section */}
+                            <div className='space-y-4'>
+                                <div className='flex items-center justify-between px-2'>
+                                    <span className='text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]'>Target Distribution Matrix</span>
+                                    <span className='text-[10px] font-bold text-emerald-500 uppercase'>{selectedAccounts.length} Selected</span>
+                                </div>
+                                
+                                {accounts.length > 0 ? (
+                                    <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+                                        {accounts.map((acc) => (
+                                            <label
+                                                key={acc.id}
+                                                className={`flex items-center gap-4 border p-5 rounded-2xl cursor-pointer transition-all duration-300 ${selectedAccounts.includes(acc.id) ? "bg-emerald-500/10 border-emerald-500/50 shadow-lg shadow-emerald-500/5" : "bg-black/40 border-white/5 hover:border-white/20 hover:bg-black/60"}`}
+                                            >
+                                                <input
+                                                    type='checkbox'
+                                                    className='hidden'
+                                                    checked={selectedAccounts.includes(acc.id)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) setSelectedAccounts([...selectedAccounts, acc.id]);
+                                                        else setSelectedAccounts(selectedAccounts.filter(id => id !== acc.id));
+                                                    }}
+                                                />
+                                                <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${selectedAccounts.includes(acc.id) ? "bg-emerald-500 border-emerald-500" : "border-zinc-700"}`}>
+                                                    {selectedAccounts.includes(acc.id) && <span className='text-black text-xs font-black'>✓</span>}
+                                                </div>
+                                                <div className='flex flex-col'>
+                                                    <span className='text-sm font-bold text-white'>{acc.display_name}</span>
+                                                    <span className='text-[9px] text-zinc-500 font-black uppercase tracking-widest'>{acc.platform_id}</span>
+                                                </div>
+                                            </label>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className='bg-black/40 border border-dashed border-white/10 rounded-2xl p-8 text-center'>
+                                        <p className='text-zinc-600 text-[10px] font-black uppercase tracking-widest'>No connected accounts found. Go to Integrations first.</p>
+                                    </div>
+                                )}
                             </div>
-                            <div className='bg-zinc-900/50 p-6 rounded-2xl border border-white/5'>
-                                <p className='text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2'>Format</p>
-                                <p className='text-xs font-bold text-zinc-300 uppercase'>Vertical Clips</p>
-                            </div>
-                            <div className='bg-zinc-900/50 p-6 rounded-2xl border border-white/5'>
-                                <p className='text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2'>Audio</p>
-                                <p className='text-xs font-bold text-zinc-300 uppercase'>Captioned Render</p>
-                            </div>
-                        </div>
 
                             <button
                                 onClick={startClipping}
@@ -176,27 +191,6 @@ export default function VideoClipper() {
                             {status && (
                                 <div className='mt-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-6 py-4 text-xs font-bold text-emerald-400 text-center animate-pulse uppercase tracking-widest'>
                                     {status}
-                                </div>
-                            )}
-
-                            {job && (
-                                <div className='rounded-2xl border border-white/5 bg-black/30 p-5'>
-                                    <div className='flex items-center justify-between gap-3'>
-                                        <div>
-                                            <p className='text-[10px] font-black text-zinc-500 uppercase tracking-widest'>Current Job</p>
-                                            <h4 className='text-sm font-bold text-white break-all'>{job.id}</h4>
-                                        </div>
-                                        <span className={`rounded-lg border px-3 py-1 text-[9px] font-black uppercase tracking-widest ${job.status === "completed" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" : job.status === "failed" ? "bg-red-500/15 text-red-300 border-red-500/30" : "bg-amber-500/15 text-amber-300 border-amber-500/30"}`}>
-                                            {job.status}
-                                        </span>
-                                    </div>
-                                    <div className='mt-4 space-y-2 text-xs text-zinc-400'>
-                                        <p><span className='font-black uppercase tracking-widest text-zinc-500'>Source:</span> {job.video_url || videoUrl}</p>
-                                        <p><span className='font-black uppercase tracking-widest text-zinc-500'>Topic:</span> {job.topic}</p>
-                                        {job.error && (
-                                            <p className='text-red-400 font-medium break-all'>{job.error}</p>
-                                        )}
-                                    </div>
                                 </div>
                             )}
                         </div>

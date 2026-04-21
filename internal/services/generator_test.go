@@ -27,7 +27,7 @@ type fakeVoiceGenerator struct {
 	err error
 }
 
-func (m *fakeVoiceGenerator) GenerateVO(ctx context.Context, text string) (string, error) {
+func (m *fakeVoiceGenerator) GenerateVO(ctx context.Context, text string, voiceType string) (string, error) {
 	if m.err != nil {
 		return "", m.err
 	}
@@ -77,7 +77,7 @@ func TestGenerateContent_Success(t *testing.T) {
 		nil,
 	)
 
-	story, err := s.GenerateContent(context.Background(), "motivation", "discipline")
+	story, err := s.GenerateContent(context.Background(), "motivation", "discipline", "en-US-Standard-A")
 	if err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
@@ -100,7 +100,7 @@ func TestGenerateContent_ScriptError(t *testing.T) {
 		nil,
 	)
 
-	_, err := s.GenerateContent(context.Background(), "motivation", "discipline")
+	_, err := s.GenerateContent(context.Background(), "motivation", "discipline", "en-US-Standard-A")
 	if err == nil || err.Error() != "script writer (Gemini & Codex): failed to write script" {
 		t.Errorf("expected script writer error, got %v", err)
 	}

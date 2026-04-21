@@ -47,10 +47,12 @@ services:
       - MINIO_BUCKET=${MINIO_BUCKET:-clips}
       - WHISPER_URL=${WHISPER_URL:-http://whisper:9000/v1/audio/transcriptions}
       - BROWSER_PROFILES_DIR=/data/browser_profiles
+      - BROWSER_LAUNCH_REQUEST_DIR=/runtime/browser-launch-requests
     volumes:
       - ${HOME}/.codex:/root/.codex
       - ${HOME}/.gemini:/root/.gemini:ro
       - browser_data:/data/browser_profiles
+      - ./.runtime/browser-launch-requests:/runtime/browser-launch-requests
     depends_on:
       - db
       - minio

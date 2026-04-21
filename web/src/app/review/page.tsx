@@ -43,7 +43,7 @@ export default function ReviewQueue() {
     };
 
     return (
-        <div className='space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700'>
+        <div className='space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pt-4 pb-10'>
             <div className='border-l-4 border-amber-500 pl-6'>
                 <h2 className='text-4xl font-black text-white tracking-tighter uppercase font-mono'>
                     Review Queue
@@ -94,10 +94,11 @@ export default function ReviewQueue() {
                         ))
                     ) : (
                         <div className='col-span-full text-center py-40 bg-card rounded-[3rem] border-2 border-dashed border-white/5'>
-                            <div className='text-7xl mb-6 opacity-30 grayscale'>💤</div>
-                            <p className='text-zinc-500 text-xl font-black uppercase tracking-[0.2em]'>Review Queue Empty</p>
-                        </div>
-                    )}
+                    <div className='text-7xl mb-6 opacity-30 grayscale'>💤</div>
+                    <p className='text-zinc-500 text-xl font-black uppercase tracking-[0.2em]'>No Clips Awaiting Review</p>
+                    <p className='mt-3 text-zinc-600 text-sm font-medium'>Generate a clip job first, then approve or reject items here before distribution.</p>
+                </div>
+            )}
                 </div>
             )}
         </div>

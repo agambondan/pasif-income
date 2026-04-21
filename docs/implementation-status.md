@@ -10,7 +10,7 @@ Catatan: `done` di sini berarti produk/portal operasional lengkap. Dengan defini
 - API backend sudah menyediakan endpoint untuk login, jobs, clips, accounts, platforms, dan health.
 - Faceless content generator sudah punya pipeline teknis end-to-end:
   - script
-  - voiceover
+  - voiceover dengan preset selectable dari dashboard
   - images
   - assembly
   - upload ke storage
@@ -36,6 +36,7 @@ Catatan: `done` di sini berarti produk/portal operasional lengkap. Dengan defini
   - `creator`
 - Session-based dashboard auth sudah aktif via cookie backend.
 - Chromium profile provisioning sudah aktif per platform/email, dan connect browser profile akan membuka login session sekali saat setup awal.
+- Voice preset dashboard sudah bisa dipilih di generator page, dengan fallback default dari `VOICE_TYPE` atau `en-US-Standard-A`.
 - Distribution worker sudah memproses pending `distribution_jobs`.
 - Metrics worker sudah melakukan sync snapshot metrik YouTube ke Postgres.
 - Dashboard analytics sudah menampilkan growth by niche, video, platform, dan akun.
@@ -54,7 +55,14 @@ Catatan: `done` di sini berarti produk/portal operasional lengkap. Dengan defini
 - Portal creator dan clipper masih perlu hardening UX/ops sebelum dianggap produk final.
 - OAuth/API connect dan browser profile connect sekarang dipisah di UI integrations.
 - Chromium profile connect membuat profile path nyata, lalu membuka login browser sekali saat setup awal.
+- UI integrations sekarang menampilkan status browser profile berdasarkan isi folder profile, supaya operator tahu mana yang masih `needs_login` dan mana yang sudah `ready`.
+- UI integrations juga punya `Refresh Status` untuk probe ulang browser profile setelah login manual.
+- Chromium profile login sekarang di-queue ke host-side launcher, bukan dibuka dari container app.
 - YouTube API connect sekarang memakai OAuth redirect + token exchange, dengan scope read untuk analytics.
+- Backend publish path sekarang dipisah jelas:
+  - YouTube API upload adapter
+  - Chromium profile upload adapter
+  - fallback hanya berlaku di jalur YouTube ketika diaktifkan via env
 - Dashboard videos sekarang punya panel analytics metrik dasar.
 - `distribution_jobs` dan metrics masih diproses dengan worker polling sederhana, belum queue/broker terpisah.
 - QC reviewer masih heuristik-first dengan Gemini sebagai reviewer tambahan kalau kredensial ada.

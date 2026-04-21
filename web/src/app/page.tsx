@@ -56,6 +56,13 @@ type IdeaSuggestion = {
     reason: string;
 };
 
+type VoiceTypeOption = {
+    id: string;
+    label: string;
+    language: string;
+    tld: string;
+};
+
 type TrendResearchResult = {
     niche: string;
     seed: string;
@@ -95,6 +102,8 @@ export default function Dashboard() {
     const [lastUpdated, setLastUpdated] = useState("Never");
     const [niche, setNiche] = useState("stoicism");
     const [topic, setTopic] = useState("how to control your mind");
+    const [voiceType, setVoiceType] = useState("en-US-Standard-A");
+    const [voiceTypes, setVoiceTypes] = useState<VoiceTypeOption[]>([]);
     const [scheduleMode, setScheduleMode] = useState<
         "immediate" | "drip_feed" | "prime_time"
     >("immediate");
@@ -139,6 +148,28 @@ export default function Dashboard() {
             setClips(data || []);
         } catch (err) {
             console.error("Failed to fetch clips:", err);
+        }
+    }, []);
+
+    const fetchVoiceTypes = useCallback(async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/voice-types`, {
+                credentials: "include",
+            });
+            if (!res.ok) {
+                return;
+            }
+            const data = (await res.json()) as VoiceTypeOption[];
+            const options = data || [];
+            setVoiceTypes(options);
+            if (options.length === 0) return;
+            setVoiceType((current) =>
+                options.some((item) => item.id === current)
+                    ? current
+                    : options[0].id,
+            );
+        } catch (err) {
+            console.error("Failed to fetch voice types:", err);
         }
     }, []);
 
@@ -203,6 +234,7 @@ export default function Dashboard() {
             fetchClips(),
             fetchJobs(),
             fetchAccounts(),
+            fetchVoiceTypes(),
         ]);
         if (selectedJobIdRef.current) {
             await fetchDistributionJobs(selectedJobIdRef.current);
@@ -214,6 +246,7 @@ export default function Dashboard() {
         fetchClips,
         fetchJobs,
         fetchAccounts,
+        fetchVoiceTypes,
         fetchDistributionJobs,
     ]);
 
@@ -321,6 +354,7 @@ export default function Dashboard() {
                 body: JSON.stringify({
                     niche,
                     topic,
+                    voice_type: voiceType,
                     destinations,
                     schedule_mode: scheduleMode,
                     drip_interval_days: dripIntervalDays,
@@ -349,15 +383,14 @@ export default function Dashboard() {
     };
 
     return (
-        <div className='space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700'>
+        <div className='space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10'>
             <div className='flex flex-col md:flex-row justify-between items-end gap-6 border-l-4 border-blue-500 pl-6'>
                 <div>
                     <h2 className='text-4xl font-black text-white tracking-tighter uppercase'>
                         Operations
                     </h2>
                     <p className='text-zinc-500 mt-2 font-medium'>
-                        Control the AI production pipeline and monitor live
-                        jobs.
+                        Control the AI production pipeline, choose a voice preset, and monitor live jobs.
                     </p>
                 </div>
                 <div className='flex gap-4'>
@@ -370,9 +403,7 @@ export default function Dashboard() {
                     <div
                         className={`px-6 py-3 rounded-2xl border text-xs font-black tracking-widest ${backendOnline ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-red-500/10 border-red-500/20 text-red-400"}`}
                     >
-                        {backendOnline
-                            ? "● BACKEND ONLINE"
-                            : "● BACKEND OFFLINE"}
+                        {backendOnline ? "● BACKEND ONLINE" : "● BACKEND OFFLINE"}
                     </div>
                     <div className='px-6 py-3 rounded-2xl border border-white/5 bg-zinc-900 text-[10px] font-bold tracking-widest text-zinc-500'>
                         UPDATED {lastUpdated}
@@ -380,8 +411,9 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            <section className='grid gap-8 lg:grid-cols-[1.4fr_0.6fr]'>
-                <div className='bg-card border border-white/5 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden group'>
+            <section className='grid gap-8 xl:grid-cols-[1.2fr_0.8fr]'>
+                <div className='bg-card border border-white/5 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden group h-fit'>
+
                     <div className='absolute -top-24 -right-24 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl group-hover:bg-blue-500/10 transition-colors'></div>
 
                     <div className='relative z-10'>
@@ -423,6 +455,41 @@ export default function Dashboard() {
 
                         <div className='grid gap-6 md:grid-cols-2 mb-8'>
                             <div className='space-y-2'>
+                                <label htmlFor="voice-type-input" className='text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1'>
+                                    Voice Preset
+                                </label>
+                                <select
+                                    id="voice-type-input"
+                                    value={voiceType}
+                                    onChange={(e) => setVoiceType(e.target.value)}
+                                    className='w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-4 text-white font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'
+                                >
+                                    {voiceTypes.length > 0 ? (
+                                        voiceTypes.map((option) => (
+                                            <option key={option.id} value={option.id}>
+                                                {option.label} · {option.id}
+                                            </option>
+                                        ))
+                                    ) : (
+                                        <>
+                                            <option value='en-US-Standard-A'>English (US) · en-US-Standard-A</option>
+                                            <option value='en-GB-Standard-A'>English (UK) · en-GB-Standard-A</option>
+                                        </>
+                                    )}
+                                </select>
+                                <div className='space-y-2 rounded-2xl border border-white/5 bg-black/20 px-4 py-3'>
+                                    <p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
+                                        Default follows `VOICE_TYPE` env or `en-US-Standard-A`.
+                                    </p>
+                                    <p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
+                                        CLI: `go run cmd/creator/main.go --list-voice-types`
+                                    </p>
+                                    <p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
+                                        Selected preset is forwarded to the voice adapter during generation.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className='space-y-2'>
                                 <label className='text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1'>
                                     Scheduling Mode
                                 </label>
@@ -443,6 +510,9 @@ export default function Dashboard() {
                                     </option>
                                 </select>
                             </div>
+                        </div>
+
+                        <div className='grid gap-6 md:grid-cols-2 mb-8'>
                             <div className='space-y-2'>
                                 <label className='text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1'>
                                     Drip Interval Days
@@ -472,6 +542,9 @@ export default function Dashboard() {
                                     <h4 className='text-lg font-black text-white uppercase tracking-tight'>
                                         Discover topic ideas from live signals
                                     </h4>
+                                    <p className='mt-2 text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
+                                        Pick a suggestion to fill the content concept field.
+                                    </p>
                                 </div>
                                 <button
                                     onClick={researchIdeas}
@@ -544,6 +617,9 @@ export default function Dashboard() {
                                 <span className='text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1 block mb-4 text-center'>
                                     Distribution Matrix
                                 </span>
+                                <p className='mb-4 text-center text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
+                                    Select one or more connected accounts to publish the generated job.
+                                </p>
                                 <div className='flex flex-wrap justify-center gap-3'>
                                     {accounts.map((acc) => (
                                         <label

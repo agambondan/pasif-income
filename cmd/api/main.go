@@ -27,6 +27,7 @@ import (
 type generateRequest struct {
 	Niche            string               `json:"niche"`
 	Topic            string               `json:"topic"`
+	VoiceType        string               `json:"voice_type"`
 	VideoURL         string               `json:"video_url"`
 	Destinations     []domain.Destination `json:"destinations"`
 	ScheduleMode     string               `json:"schedule_mode"`
@@ -37,7 +38,7 @@ type generateRequest struct {
 type apiServer struct {
 	repo      ports.Repository
 	storage   ports.Storage
-	browser   *adapters.ChromiumRunner
+	launcher  *adapters.BrowserLaunchQueue
 	generator *services.GeneratorService
 	workflow  *services.WorkflowService
 	auth      *services.AuthService
@@ -66,7 +67,7 @@ func main() {
 	api := &apiServer{
 		repo:     repo,
 		storage:  storage,
-		browser:  adapters.NewChromiumRunnerFromEnv(),
+		launcher: adapters.NewBrowserLaunchQueueFromEnv(),
 		auth:     services.NewAuthService(repo),
 		platform: services.NewPlatformService(repo),
 		metrics:  services.NewMetricsService(repo),
@@ -107,10 +108,12 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", api.healthHandler)
 	mux.HandleFunc("/api/auth/login", api.loginHandler)
+	mux.HandleFunc("/api/auth/me", api.meHandler)
 	mux.HandleFunc("/api/auth/logout", api.logoutHandler)
 	mux.HandleFunc("/api/auth/refresh/", api.refreshTokenHandler)
 	mux.HandleFunc("/api/auth/revoke/", api.revokeTokenHandler)
 	mux.HandleFunc("/api/platforms", api.platformsHandler)
+	mux.HandleFunc("/api/voice-types", api.voiceTypesHandler)
 	mux.HandleFunc("/api/accounts", api.accountsHandler)
 	mux.HandleFunc("/api/accounts/", api.accountByIDHandler)
 	mux.HandleFunc("/api/auth/", api.oauthHandler)
@@ -162,6 +165,13 @@ func minioBucket() string {
 	return "clips"
 }
 
+func defaultVoiceTypeFromEnv() string {
+	if voiceType := strings.TrimSpace(os.Getenv("VOICE_TYPE")); voiceType != "" {
+		return voiceType
+	}
+	return "en-US-Standard-A"
+}
+
 func (a *apiServer) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -200,6 +210,28 @@ func (a *apiServer) loginHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
+func (a *apiServer) meHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if a.repo == nil {
+		http.Error(w, "repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	token, ok := sessionTokenFromRequest(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	user, err := a.repo.GetUserBySessionToken(r.Context(), token)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
 func (a *apiServer) logoutHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -222,6 +254,10 @@ func (a *apiServer) logoutHandler(w http.ResponseWriter, r *http.Request) {
 func (a *apiServer) platformsHandler(w http.ResponseWriter, r *http.Request) {
 	platforms := a.platform.GetSupportedPlatforms()
 	writeJSON(w, http.StatusOK, platforms)
+}
+
+func (a *apiServer) voiceTypesHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, adapters.SupportedVoiceProfiles())
 }
 
 func (a *apiServer) accountsHandler(w http.ResponseWriter, r *http.Request) {
@@ -270,6 +306,21 @@ func (a *apiServer) accountByIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.HasSuffix(id, "/status") {
+		accountID := strings.TrimSuffix(id, "/status")
+		accountID = strings.TrimSuffix(accountID, "/")
+		if accountID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		a.refreshChromiumProfileStatusHandler(w, r, userID, accountID)
+		return
+	}
+
 	if r.Method != http.MethodDelete {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -292,8 +343,8 @@ func (a *apiServer) accountByIDHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *apiServer) launchChromiumProfileHandler(w http.ResponseWriter, r *http.Request, userID int, accountID string) {
-	if a.browser == nil {
-		http.Error(w, "chromium browser unavailable", http.StatusServiceUnavailable)
+	if a.launcher == nil {
+		http.Error(w, "browser launch queue unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	account, err := a.repo.GetConnectedAccountByID(r.Context(), accountID)
@@ -315,9 +366,27 @@ func (a *apiServer) launchChromiumProfileHandler(w http.ResponseWriter, r *http.
 	}
 	a.launchChromiumProfile(account)
 	writeJSON(w, http.StatusAccepted, map[string]string{
-		"status": "launching",
+		"status": "queued",
 		"id":     account.ID,
 	})
+}
+
+func (a *apiServer) refreshChromiumProfileStatusHandler(w http.ResponseWriter, r *http.Request, userID int, accountID string) {
+	account, err := a.repo.GetConnectedAccountByID(r.Context(), accountID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if account.UserID != userID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if account.AuthMethod != domain.AuthMethodChromiumProfile {
+		http.Error(w, "browser status refresh only applies to chromium profiles", http.StatusBadRequest)
+		return
+	}
+	a.annotateBrowserStatus(account)
+	writeJSON(w, http.StatusOK, account)
 }
 
 func (a *apiServer) refreshTokenHandler(w http.ResponseWriter, r *http.Request) {
@@ -408,7 +477,7 @@ func (a *apiServer) oauthHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.annotateBrowserStatus(acc)
-		log.Printf("Chromium profile ready for %s at %s\n", acc.Email, acc.ProfilePath)
+		log.Printf("Chromium profile queued for %s at %s\n", acc.Email, acc.ProfilePath)
 		a.launchChromiumProfile(acc)
 
 		if len(pathParts) > 1 && pathParts[1] == "callback" {
@@ -469,7 +538,7 @@ func (a *apiServer) oauthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *apiServer) launchChromiumProfile(account *domain.ConnectedAccount) {
-	if a == nil || a.browser == nil || account == nil {
+	if a == nil || a.launcher == nil || account == nil {
 		return
 	}
 	if account.ProfilePath == "" {
@@ -483,13 +552,27 @@ func (a *apiServer) launchChromiumProfile(account *domain.ConnectedAccount) {
 		return
 	}
 
-	go func(profilePath, platformID, targetURL string) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-		if err := a.browser.OpenLogin(ctx, profilePath, targetURL); err != nil {
-			log.Printf("chromium profile login launch failed for %s (%s): %v\n", platformID, profilePath, err)
-		}
-	}(account.ProfilePath, account.PlatformID, targetURL)
+	req := adapters.BrowserLaunchRequest{
+		ID:          fmt.Sprintf("%s_%s", account.PlatformID, sanitizeAccountEmail(account.Email)),
+		UserID:      account.UserID,
+		AccountID:   account.ID,
+		PlatformID:  account.PlatformID,
+		Email:       account.Email,
+		DisplayName: account.DisplayName,
+		ProfilePath: account.ProfilePath,
+		TargetURL:   targetURL,
+		RequestedAt: time.Now().UTC(),
+		RequestedBy: "dashboard",
+	}
+	if path, err := a.launcher.Enqueue(context.Background(), req); err != nil {
+		log.Printf("chromium profile login enqueue failed for %s (%s): %v\n", account.PlatformID, account.ProfilePath, err)
+	} else {
+		log.Printf("chromium profile login queued for %s at %s (%s)\n", account.Email, account.ProfilePath, path)
+	}
+}
+
+func sanitizeAccountEmail(email string) string {
+	return strings.NewReplacer("@", "_at_", ".", "_", "+", "_plus_", "/", "_", "\\", "_").Replace(strings.ToLower(strings.TrimSpace(email)))
 }
 
 func browserTargetURL(platformID string) string {
@@ -570,7 +653,7 @@ func browserProfileStatus(profilePath string) string {
 		return "unknown"
 	}
 
-	if fileExists(filepath.Join(profilePath, "Default", "Cookies")) || fileExists(filepath.Join(profilePath, "Default", "Login Data")) {
+	if fileHasData(filepath.Join(profilePath, "Default", "Cookies")) || fileHasData(filepath.Join(profilePath, "Default", "Login Data")) {
 		return "ready"
 	}
 	if fileExists(filepath.Join(profilePath, "profile.json")) {
@@ -582,6 +665,14 @@ func browserProfileStatus(profilePath string) string {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func fileHasData(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.Size() > 0
 }
 
 func youtubeOAuthConfig() (*oauth2.Config, error) {
@@ -942,7 +1033,7 @@ func newGeneratorServiceFromEnv() (*services.GeneratorService, error) {
 
 	writer := adapters.NewGeminiWriter(apiKey)
 	codexWriter := adapters.NewCodexWriter()
-	voice := adapters.NewVoiceAdapter("en-US-Standard-A")
+	voice := adapters.NewVoiceAdapter(defaultVoiceTypeFromEnv())
 	image := adapters.NewStableDiffusionAdapter(os.Getenv("SD_API_URL"))
 	assembler := adapters.NewFFmpegAssembler()
 	uploader, err := newUploaderFromEnv()
@@ -1095,6 +1186,11 @@ func (a *apiServer) generateHandler(w http.ResponseWriter, r *http.Request) {
 			topic = "how to control your mind"
 		}
 
+		voiceType := strings.TrimSpace(req.VoiceType)
+		if voiceType == "" {
+			voiceType = defaultVoiceTypeFromEnv()
+		}
+
 		userID, err := a.currentUserID(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -1122,7 +1218,7 @@ func (a *apiServer) generateHandler(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(req.VideoURL) != "" {
 			go a.runClipper(job.ID, req.VideoURL)
 		} else {
-			go a.runGeneration(userID, job.ID, niche, topic, req.Destinations, req.ScheduleMode, req.DripIntervalDays, req.StartAt)
+			go a.runGeneration(userID, job.ID, niche, topic, voiceType, req.Destinations, req.ScheduleMode, req.DripIntervalDays, req.StartAt)
 		}
 
 		writeJSON(w, http.StatusAccepted, job)
@@ -1312,7 +1408,7 @@ func (a *apiServer) runClipper(jobID, videoURL string) {
 	}
 }
 
-func (a *apiServer) runGeneration(userID int, jobID, niche, topic string, destinations []domain.Destination, scheduleMode string, dripIntervalDays int, startAt string) {
+func (a *apiServer) runGeneration(userID int, jobID, niche, topic, voiceType string, destinations []domain.Destination, scheduleMode string, dripIntervalDays int, startAt string) {
 	if a.repo != nil {
 		if err := a.repo.UpdateJobStatus(context.Background(), jobID, "running", ""); err != nil {
 			log.Printf("failed to mark job running: %v\n", err)
@@ -1329,7 +1425,7 @@ func (a *apiServer) runGeneration(userID int, jobID, niche, topic string, destin
 		return
 	}
 
-	story, err := a.generator.GenerateContent(ctx, niche, topic)
+	story, err := a.generator.GenerateContent(ctx, niche, topic, voiceType)
 	if err != nil {
 		if a.repo != nil {
 			_ = a.repo.UpdateJobStatus(ctx, jobID, "failed", err.Error())

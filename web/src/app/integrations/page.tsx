@@ -94,7 +94,14 @@ export default function Integrations() {
     setBusyKey(`${platformId}:browser`, true);
     try {
       setStatusMessage(`Opening browser login for ${email}...`);
-      window.location.assign(`/api/auth/${platformId}?method=chromium_profile&email=${encodeURIComponent(email)}`);
+      const res = await fetch(`/api/auth/${platformId}?method=chromium_profile&email=${encodeURIComponent(email)}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      setStatusMessage(`Browser login queued for ${email}. Open the host launcher to open Chromium on your desktop.`);
     } finally {
       setBusyKey(`${platformId}:browser`, false);
     }
@@ -103,7 +110,7 @@ export default function Integrations() {
   const handleLaunchBrowser = async (accountId: string) => {
     setBusyKey(`${accountId}:launch`, true);
     try {
-      setStatusMessage('Launching browser login session...');
+      setStatusMessage('Queueing browser login session on host launcher...');
       const res = await fetch(`/api/accounts/${accountId}/launch`, {
         method: 'POST',
         credentials: 'include',
@@ -116,6 +123,28 @@ export default function Integrations() {
       setStatusMessage(err instanceof Error ? err.message : 'Failed to launch browser session');
     } finally {
       setBusyKey(`${accountId}:launch`, false);
+    }
+  };
+
+  const handleRefreshBrowserStatus = async (accountId: string) => {
+    setBusyKey(`${accountId}:status`, true);
+    try {
+      setStatusMessage('Refreshing browser profile status...');
+      const res = await fetch(`/api/accounts/${accountId}/status`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      const updated = (await res.json()) as ConnectedAccount;
+      setAccounts((prev) => prev.map((acc) => (acc.id === accountId ? updated : acc)));
+      setStatusMessage(`Status refreshed: ${updated.browser_status || 'unset'}`);
+    } catch (err) {
+      console.error('Failed to refresh browser status:', err);
+      setStatusMessage(err instanceof Error ? err.message : 'Failed to refresh browser status');
+    } finally {
+      setBusyKey(`${accountId}:status`, false);
     }
   };
 
@@ -132,12 +161,23 @@ export default function Integrations() {
   };
 
   return (
-    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 pt-10">
       <div className="border-l-4 border-emerald-500 pl-6">
         <h2 className="text-4xl font-black text-white tracking-tighter">INTEGRATIONS</h2>
         <p className="text-zinc-500 mt-2 font-medium">
           Separate API connections and Chromium profiles. Profile connects open a login browser once, then reuse the saved profile on publish.
         </p>
+        <div className="mt-4 space-y-2 rounded-2xl border border-white/5 bg-black/20 px-4 py-3 max-w-3xl">
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+            API Auth is for token-based publishing and analytics.
+          </p>
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+            Chromium Profile is for email lookup, one-time login setup, and profile reuse during publish.
+          </p>
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+            Use Open Login after Create & Open Profile if the browser session needs manual sign-in.
+          </p>
+        </div>
       </div>
 
       {statusMessage && (
@@ -231,6 +271,9 @@ export default function Integrations() {
                       </div>
                       <span className="text-[9px] font-black uppercase tracking-widest text-emerald-300">Email lookup</span>
                     </div>
+                    <p className="mb-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest leading-relaxed">
+                      Connect once, sign in in the opened browser, then reuse the profile on publish without opening Chrome again.
+                    </p>
 
                     <label className="mb-4 block">
                       <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Profile Email</span>
@@ -265,6 +308,13 @@ export default function Integrations() {
                                     className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
                                   >
                                     {busy[`${acc.id}:launch`] ? 'OPENING...' : 'Open Login'}
+                                  </button>
+                                  <button
+                                    onClick={() => handleRefreshBrowserStatus(acc.id)}
+                                    disabled={busy[`${acc.id}:status`]}
+                                    className="px-4 py-2 rounded-xl border border-white/10 bg-black/30 hover:bg-white/5 text-white text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                                  >
+                                    {busy[`${acc.id}:status`] ? 'REFRESHING...' : 'Refresh Status'}
                                   </button>
                                   <button
                                     onClick={() => handleDisconnect(acc.id)}

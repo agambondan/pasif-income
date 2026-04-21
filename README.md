@@ -9,7 +9,7 @@ Project ini dikelola dalam format monorepo:
 ### [01-faceless-channel](./01-faceless-channel)
 Generator konten pendek (TikTok/Shorts/Reels) otomatis, masih partial sebagai produk operasional.
 - **AI Strategist**: Gemini 1.5 Pro.
-- **Voiceover**: TTS (gTTS).
+- **Voiceover**: TTS (gTTS preset selectable dari dashboard, default `en-US-Standard-A`).
 - **Visuals**: Automated Slideshow with dynamic captions.
 
 ### [02-podcast-clips-factory](./02-podcast-clips-factory)
@@ -22,6 +22,9 @@ Pabrik klip pendek dari video durasi panjang (podcast/seminar), masih partial se
 
 - Gemini adapter menerima `GEMINI_API_KEY`, `GEMINI_ACCESS_TOKEN`, atau auth file lokal di `~/.gemini/oauth_creds.json`.
 - Codex adapter menerima `OPENAI_API_KEY`, `OPENAI_ACCESS_TOKEN`, atau auth file lokal di `~/.codex/auth.json`.
+- Voice adapter menerima preset default dari `VOICE_TYPE` atau fallback `en-US-Standard-A`.
+- `cmd/creator` bisa override voice preset via `--voice-type`.
+- `cmd/creator --list-voice-types` menampilkan preset voice yang tersedia.
 - `cmd/creator`, `cmd/api`, dan `cmd/clipper` sudah membaca credential lokal itu saat startup.
 
 ## Requirement Umum

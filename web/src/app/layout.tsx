@@ -9,6 +9,30 @@ type SessionUser = {
   username?: string;
 };
 
+function getSectionTitle(pathname: string) {
+  switch (pathname) {
+    case '/':
+      return 'Operations';
+    case '/research':
+      return 'Trend Research Lab';
+    case '/clipper':
+      return 'Podcast Clips Factory';
+    case '/review':
+      return 'Review Queue';
+    case '/videos':
+      return 'Asset Library';
+    case '/integrations':
+      return 'Integrations';
+    default:
+      return pathname === '/login'
+        ? 'Login'
+        : pathname
+            .replace('/', '')
+            .replace(/-/g, ' ')
+            .replace(/\b\w/g, (match) => match.toUpperCase());
+  }
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -18,19 +42,43 @@ export default function RootLayout({
   const router = useRouter();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const buildTag = process.env.NEXT_PUBLIC_BUILD_TAG || 'v0.1.0';
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const savedUser = localStorage.getItem('user');
-      if (savedUser) {
-        setUser(JSON.parse(savedUser) as SessionUser);
-      } else if (pathname !== '/login') {
-        router.push('/login');
-      }
-      setIsReady(true);
-    }, 0);
+    let cancelled = false;
 
-    return () => window.clearTimeout(timer);
+    const syncSession = async () => {
+      try {
+        const res = await fetch('/api/auth/me', {
+          credentials: 'include',
+        });
+        if (!res.ok) {
+          throw new Error('unauthorized');
+        }
+        const activeUser = (await res.json()) as SessionUser;
+        if (cancelled) return;
+        setUser(activeUser);
+        localStorage.setItem('user', JSON.stringify(activeUser));
+        return;
+      } catch {
+        if (cancelled) return;
+        localStorage.removeItem('user');
+        setUser(null);
+        if (pathname !== '/login') {
+          router.push('/login');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsReady(true);
+        }
+      }
+    };
+
+    void syncSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, [pathname, router]);
 
   const handleLogout = async () => {
@@ -101,7 +149,7 @@ export default function RootLayout({
 
             {/* Assets & Shared */}
             <div>
-              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-4 px-4">Management</p>
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-4 px-4">Operations</p>
               <div className="space-y-1">
                 <Link href="/videos" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/videos' ? 'bg-white/10 text-white font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/videos' ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.6)]' : 'bg-transparent'}`}></span>
@@ -140,31 +188,31 @@ export default function RootLayout({
           <header className="h-20 border-b border-white/5 flex items-center justify-between px-10 bg-background/80 backdrop-blur-md sticky top-0 z-20">
             <div className="flex items-center gap-4">
                <h2 className="text-lg font-bold text-white uppercase tracking-widest">
-                {pathname === '/' ? 'Dashboard' : pathname.replace('/', '').replace('-', ' ')}
+                {getSectionTitle(pathname)}
                </h2>
             </div>
             <div className="flex items-center gap-6">
                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-tighter">Live Monitor</span>
+                  <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-tighter">Auth Synced</span>
                </div>
-              <span className="text-[10px] font-mono bg-zinc-800 px-3 py-1 rounded-lg text-zinc-400 border border-white/5">BUILD v1.2.0</span>
+              <span className="text-[10px] font-mono bg-zinc-800 px-3 py-1 rounded-lg text-zinc-400 border border-white/5">WEB {buildTag}</span>
             </div>
           </header>
 
           {/* Section Content */}
-          <section className="flex-1 p-10 max-w-7xl w-full mx-auto">
+          <section className="flex-1 p-8 w-full">
             {children}
           </section>
 
           {/* Section Footer */}
           <footer className="px-10 py-8 border-t border-white/5 bg-card/30">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-[11px] font-medium text-zinc-500 uppercase tracking-widest">
-              <p>© 2026 CLIPS FACTORY // AUTOMATED PIPELINE</p>
+              <p>© 2026 CLIPS FACTORY // OPERATIONS DASHBOARD</p>
               <div className="flex gap-8">
-                <a href="#" className="hover:text-emerald-400 transition-colors">Documentation</a>
-                <a href="#" className="hover:text-emerald-400 transition-colors">API Status</a>
-                <a href="#" className="hover:text-emerald-400 transition-colors">System Logs</a>
+                <Link href="/research" className="hover:text-emerald-400 transition-colors">Research</Link>
+                <Link href="/videos" className="hover:text-emerald-400 transition-colors">Library</Link>
+                <Link href="/integrations" className="hover:text-emerald-400 transition-colors">Integrations</Link>
               </div>
             </div>
           </footer>

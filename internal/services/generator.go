@@ -15,12 +15,12 @@ type GeneratorService struct {
 	writer      ports.ScriptWriter
 	codexWriter ports.ScriptWriter
 	voice       ports.VoiceGenerator
-	image     ports.ImageGenerator
-	assembler ports.VideoAssembler
-	uploader  ports.Uploader
-	branding  *BrandingService
-	affiliate *AffiliateService
-	quality   *QualityControlService
+	image       ports.ImageGenerator
+	assembler   ports.VideoAssembler
+	uploader    ports.Uploader
+	branding    *BrandingService
+	affiliate   *AffiliateService
+	quality     *QualityControlService
 }
 
 func NewGeneratorService(w ports.ScriptWriter, cw ports.ScriptWriter, v ports.VoiceGenerator, i ports.ImageGenerator, a ports.VideoAssembler, u ports.Uploader, branding *BrandingService, affiliate *AffiliateService, qc *QualityControlService) *GeneratorService {
@@ -37,7 +37,7 @@ func NewGeneratorService(w ports.ScriptWriter, cw ports.ScriptWriter, v ports.Vo
 	}
 }
 
-func (s *GeneratorService) GenerateContent(ctx context.Context, niche string, topic string) (*domain.Story, error) {
+func (s *GeneratorService) GenerateContent(ctx context.Context, niche string, topic string, voiceType string) (*domain.Story, error) {
 	log.Printf("Starting content generation for Niche: %s, Topic: %s\n", niche, topic)
 
 	attemptTopic := topic
@@ -58,7 +58,7 @@ func (s *GeneratorService) GenerateContent(ctx context.Context, niche string, to
 			log.Printf("QC retry attempt %d for topic %q\n", attempt+1, attemptTopic)
 		}
 
-		story, attemptCleanup, err := s.generateAttempt(ctx, niche, attemptTopic)
+		story, attemptCleanup, err := s.generateAttempt(ctx, niche, attemptTopic, voiceType)
 		if err != nil {
 			if attemptCleanup != nil {
 				attemptCleanup()
@@ -106,7 +106,7 @@ func (s *GeneratorService) GenerateContent(ctx context.Context, niche string, to
 	return nil, fmt.Errorf("quality control failed after retries")
 }
 
-func (s *GeneratorService) generateAttempt(ctx context.Context, niche string, topic string) (*domain.Story, func(), error) {
+func (s *GeneratorService) generateAttempt(ctx context.Context, niche string, topic string, voiceType string) (*domain.Story, func(), error) {
 	// 1. Write Script & Scene Plan - with Fallback
 	story, err := s.writer.WriteScript(ctx, niche, topic)
 	if err != nil {
@@ -114,7 +114,7 @@ func (s *GeneratorService) generateAttempt(ctx context.Context, niche string, to
 		if s.codexWriter != nil {
 			story, err = s.codexWriter.WriteScript(ctx, niche, topic)
 		}
-		
+
 		if err != nil {
 			return nil, nil, fmt.Errorf("script writer (Gemini & Codex): %v", err)
 		}
@@ -122,7 +122,7 @@ func (s *GeneratorService) generateAttempt(ctx context.Context, niche string, to
 	log.Printf("Script generated: %s\n", story.Title)
 
 	// 2. Generate Voiceover
-	voPath, err := s.voice.GenerateVO(ctx, story.Script)
+	voPath, err := s.voice.GenerateVO(ctx, story.Script, voiceType)
 	if err != nil {
 		return nil, nil, fmt.Errorf("voice generator: %v", err)
 	}

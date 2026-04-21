@@ -115,6 +115,7 @@ Request to `/api/generate`:
 {
   "niche": "stoicism",
   "topic": "how to control your mind",
+  "voice_type": "en-US-Standard-A",
   "destinations": [
     { "platform": "youtube", "account_id": "yt-main" },
     { "platform": "tiktok", "account_id": "tt-brand" }

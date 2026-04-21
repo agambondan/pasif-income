@@ -322,11 +322,11 @@ export default function VideoLibrary() {
   };
 
   return (
-    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20 pt-4">
       <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-l-4 border-blue-500 pl-6">
         <div>
-          <h2 className="text-4xl font-black text-white tracking-tighter uppercase">VIDEO ARCHIVE</h2>
-          <p className="text-zinc-500 mt-2 font-medium">Manage and review raw production assets in cold storage.</p>
+          <h2 className="text-4xl font-black text-white tracking-tighter uppercase">ASSET LIBRARY</h2>
+          <p className="text-zinc-500 mt-2 font-medium">Review raw assets, publish history, metrics, and reply drafts in one place.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
           <button
@@ -390,7 +390,8 @@ export default function VideoLibrary() {
               ))
             ) : (
               <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
-                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No niche trend data yet</p>
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No niche trends yet</p>
+                <p className="mt-2 text-zinc-500 text-sm">Sync metrics after you have published videos with connected accounts.</p>
               </div>
             )}
           </div>
@@ -417,7 +418,7 @@ export default function VideoLibrary() {
               ))
             ) : (
               <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
-                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No video trend data yet</p>
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No video trends yet</p>
               </div>
             )}
           </div>
@@ -446,7 +447,7 @@ export default function VideoLibrary() {
               ))
             ) : (
               <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
-                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No platform trend data yet</p>
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No platform trends yet</p>
               </div>
             )}
           </div>
@@ -473,7 +474,7 @@ export default function VideoLibrary() {
               ))
             ) : (
               <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
-                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No account trend data yet</p>
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No account trends yet</p>
               </div>
             )}
           </div>
@@ -525,12 +526,12 @@ export default function VideoLibrary() {
                 </div>
               ))}
             </div>
-          ) : (
-            <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
-              <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No metrics yet</p>
-              <p className="mt-2 text-zinc-500 text-sm">Sync completed YouTube API uploads to populate analytics.</p>
-            </div>
-          )}
+            ) : (
+              <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No synced metrics yet</p>
+                <p className="mt-2 text-zinc-500 text-sm">Use Sync Metrics after the first publish batch lands in YouTube API.</p>
+              </div>
+            )}
         </div>
 
         <div className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl">
@@ -562,7 +563,7 @@ export default function VideoLibrary() {
               ))
             ) : (
               <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
-                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No history yet</p>
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No metric snapshots yet</p>
               </div>
             )}
           </div>
@@ -630,7 +631,7 @@ export default function VideoLibrary() {
               ))
             ) : (
               <div className="rounded-3xl border-2 border-dashed border-white/5 py-16 text-center">
-                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No community drafts yet</p>
+                <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No reply drafts yet</p>
               </div>
             )}
           </div>
@@ -682,7 +683,7 @@ export default function VideoLibrary() {
           </div>
         ) : (
           <div className="rounded-3xl border-2 border-dashed border-white/5 py-14 text-center">
-            <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No sharp drop alerts</p>
+            <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No performance alerts yet</p>
           </div>
         )}
       </section>
@@ -724,7 +725,7 @@ export default function VideoLibrary() {
                 ))
               ) : (
                 <div className="text-center py-20 bg-card rounded-3xl border-2 border-dashed border-white/5">
-                  <p className="text-zinc-600 font-bold uppercase tracking-widest text-xs">No raw assets</p>
+                  <p className="text-zinc-600 font-bold uppercase tracking-widest text-xs">No raw asset files yet</p>
                 </div>
               )}
             </div>
@@ -792,7 +793,7 @@ export default function VideoLibrary() {
                 ))
               ) : (
                 <div className="text-center py-20 bg-card rounded-3xl border-2 border-dashed border-white/5">
-                  <p className="text-zinc-600 font-bold uppercase tracking-widest text-xs">No distribution history</p>
+                  <p className="text-zinc-600 font-bold uppercase tracking-widest text-xs">No publish records yet</p>
                 </div>
               )}
             </div>

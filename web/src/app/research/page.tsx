@@ -63,14 +63,14 @@ export default function ResearchLab() {
     };
 
     return (
-        <div className='space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700'>
+        <div className='space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pt-4 pb-10'>
             <div className='border-l-4 border-fuchsia-500 pl-6'>
                 <h2 className='text-4xl font-black text-white tracking-tighter uppercase'>Trend Research Lab</h2>
                 <p className='text-zinc-500 mt-2 font-medium'>Discover viral topic ideas using real-time market signals.</p>
             </div>
 
-            <div className='grid gap-8 lg:grid-cols-[1fr_2fr]'>
-                <div className='bg-card border border-white/5 rounded-[2.5rem] p-10 shadow-2xl h-fit'>
+            <div className='grid gap-8 lg:grid-cols-[0.8fr_2.2fr]'>
+                <div className='bg-card border border-white/5 rounded-[2.5rem] p-10 shadow-2xl h-fit sticky top-24'>
                     <h3 className='text-xl font-bold text-white mb-6 uppercase tracking-tight'>Target Niche</h3>
                     <div className='space-y-4'>
                         <input

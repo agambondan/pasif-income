@@ -58,7 +58,7 @@ type ScriptWriter interface {
 }
 
 type VoiceGenerator interface {
-	GenerateVO(ctx context.Context, text string) (path string, err error)
+	GenerateVO(ctx context.Context, text string, voiceType string) (path string, err error)
 }
 
 type ImageGenerator interface {

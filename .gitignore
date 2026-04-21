@@ -42,6 +42,7 @@ qt-faststart
 # Local storage (MinIO, DB)
 /data/
 /pgdata/
+chromium-profiles/
 
 # IDEs
 .vscode/
@@ -56,3 +57,4 @@ Thumbs.db
 .firecrawl/
 .gemini/
 .cache/
+.runtime/
