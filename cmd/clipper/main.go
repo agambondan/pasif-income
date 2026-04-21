@@ -24,7 +24,7 @@ func main() {
 
 	transcriber := adapters.NewWhisperTranscriber(whisperURL())
 	apiKey := os.Getenv("GEMINI_API_KEY")
-	agent := adapters.NewGeminiAgent(apiKey)
+	agent := adapters.NewFallbackStrategist(adapters.NewGeminiAgent(apiKey), adapters.NewCodexWriter())
 
 	vision := adapters.NewPythonVisionAgent("scripts/face_tracker.py")
 

@@ -14,6 +14,8 @@ FROM alpine:3.23
 # Install Chromium and dependencies for automation
 RUN apk add --no-cache \
     chromium \
+    python3 \
+    yt-dlp \
     nss \
     freetype \
     harfbuzz \

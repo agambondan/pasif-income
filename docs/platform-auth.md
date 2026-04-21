@@ -4,7 +4,7 @@ Dokumen ini menjelaskan pendekatan auth untuk upload otomatis ke platform sosial
 
 ## Current State
 
-- Backend sekarang punya flow connect Chromium profile yang memakai session user aktif.
+- Backend sekarang punya flow connect Chromium profile yang memakai session user aktif, lalu meluncurkan browser login untuk profile itu saat setup awal.
 - `/api/auth/{platform}` mendukung `chromium_profile` untuk semua platform dan `api` untuk YouTube.
 - Flow YouTube API melakukan OAuth redirect, exchange token, dan simpan access token/refresh token ke backend.
 - OAuth scope YouTube sekarang mencakup upload dan readonly supaya metrics sync bisa jalan dari token yang sama.
@@ -32,6 +32,14 @@ Aturan operasional yang dipakai:
 - kalau platform punya API yang layak, backend tetap boleh pakai jalur API
 
 Untuk tahap awal, `browser` di UI berarti `chromium_profile`.
+
+Alur browser profile yang dipakai sekarang:
+
+1. user isi email profile
+2. backend membuat profile path untuk email itu
+3. backend meluncurkan browser login sekali untuk profile tersebut
+4. publish berikutnya memakai profile path yang sama
+5. UI membedakan action API dan Browser Profile supaya flow-nya tidak tercampur
 
 ## YouTube
 

@@ -68,19 +68,51 @@ export default function RootLayout({
             </h1>
           </div>
           
-          <nav className="flex-1 px-4 space-y-1 mt-2">
-            <Link href="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-transparent'}`}></span>
-              Dashboard
-            </Link>
-            <Link href="/videos" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/videos' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/videos' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-transparent'}`}></span>
-              Video Library
-            </Link>
-            <Link href="/integrations" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/integrations' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/integrations' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-transparent'}`}></span>
-              Integrations
-            </Link>
+          <nav className="flex-1 px-4 space-y-6 mt-6 overflow-y-auto">
+            {/* Divisi 1: Faceless */}
+            <div>
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-4 px-4">Faceless Engine</p>
+              <div className="space-y-1">
+                <Link href="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/' ? 'bg-blue-500/10 text-blue-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/' ? 'bg-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.6)]' : 'bg-transparent'}`}></span>
+                  Generator
+                </Link>
+                <Link href="/research" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/research' ? 'bg-fuchsia-500/10 text-fuchsia-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/research' ? 'bg-fuchsia-400 shadow-[0_0_8px_rgba(217,70,239,0.6)]' : 'bg-transparent'}`}></span>
+                  Idea Lab
+                </Link>
+              </div>
+            </div>
+
+            {/* Divisi 2: Clipper */}
+            <div>
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-4 px-4">Clips Factory</p>
+              <div className="space-y-1">
+                <Link href="/clipper" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/clipper' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/clipper' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-transparent'}`}></span>
+                  Video Clipper
+                </Link>
+                <Link href="/review" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/review' ? 'bg-amber-500/10 text-amber-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/review' ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'bg-transparent'}`}></span>
+                  Review Queue
+                </Link>
+              </div>
+            </div>
+
+            {/* Assets & Shared */}
+            <div>
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-4 px-4">Management</p>
+              <div className="space-y-1">
+                <Link href="/videos" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/videos' ? 'bg-white/10 text-white font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/videos' ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.6)]' : 'bg-transparent'}`}></span>
+                  Library
+                </Link>
+                <Link href="/integrations" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/integrations' ? 'bg-white/10 text-white font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/integrations' ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.6)]' : 'bg-transparent'}`}></span>
+                  Integrations
+                </Link>
+              </div>
+            </div>
           </nav>
 
           <div className="p-6 border-t border-white/5 bg-black/20">

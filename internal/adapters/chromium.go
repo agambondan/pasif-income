@@ -24,6 +24,14 @@ func NewChromiumRunnerFromEnv() *ChromiumRunner {
 }
 
 func (r *ChromiumRunner) Open(ctx context.Context, profilePath, targetURL string) error {
+	return r.open(ctx, profilePath, targetURL, headlessEnabled(), browserWaitDuration())
+}
+
+func (r *ChromiumRunner) OpenLogin(ctx context.Context, profilePath, targetURL string) error {
+	return r.open(ctx, profilePath, targetURL, loginHeadlessEnabled(), browserLoginWaitDuration())
+}
+
+func (r *ChromiumRunner) open(ctx context.Context, profilePath, targetURL string, headless bool, waitFor time.Duration) error {
 	if profilePath == "" {
 		return fmt.Errorf("profile path is required")
 	}
@@ -46,7 +54,7 @@ func (r *ChromiumRunner) Open(ctx context.Context, profilePath, targetURL string
 		"--disable-dev-shm-usage",
 		"--new-window",
 	}
-	if headlessEnabled() {
+	if headless {
 		args = append(args, "--headless=new")
 	}
 	args = append(args, targetURL)
@@ -60,7 +68,6 @@ func (r *ChromiumRunner) Open(ctx context.Context, profilePath, targetURL string
 		return err
 	}
 
-	waitFor := browserWaitDuration()
 	timer := time.NewTimer(waitFor)
 	defer timer.Stop()
 
@@ -203,6 +210,29 @@ func browserWaitDuration() time.Duration {
 		return 5 * time.Second
 	}
 	return duration
+}
+
+func browserLoginWaitDuration() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("BROWSER_LOGIN_WAIT_SECONDS"))
+	if raw == "" {
+		return 5 * time.Minute
+	}
+	duration, err := time.ParseDuration(raw + "s")
+	if err != nil {
+		return 5 * time.Minute
+	}
+	return duration
+}
+
+func loginHeadlessEnabled() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv("BROWSER_HEADLESS_CONNECT")))
+	if value == "true" || value == "1" {
+		return true
+	}
+	if value == "false" || value == "0" {
+		return false
+	}
+	return false
 }
 
 func killProcess(cmd *exec.Cmd) error {

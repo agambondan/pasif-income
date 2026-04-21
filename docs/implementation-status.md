@@ -2,17 +2,19 @@
 
 Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 
-## Done
+Catatan: `done` di sini berarti produk/portal operasional lengkap. Dengan definisi itu, faceless channel dan podcast clipper masih **partial** karena pipeline teknis sudah ada, tetapi portal/UX operasional belum matang.
+
+## Partial
 
 - Dashboard web sudah berjalan sebagai control panel.
 - API backend sudah menyediakan endpoint untuk login, jobs, clips, accounts, platforms, dan health.
-- Faceless content generator sudah punya pipeline end-to-end:
+- Faceless content generator sudah punya pipeline teknis end-to-end:
   - script
   - voiceover
   - images
   - assembly
   - upload ke storage
-- Podcast clipper sudah punya pipeline end-to-end:
+- Podcast clipper sudah punya pipeline teknis end-to-end:
   - download
   - transcribe
   - analyze
@@ -33,7 +35,7 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
   - `clipper`
   - `creator`
 - Session-based dashboard auth sudah aktif via cookie backend.
-- Chromium profile provisioning sudah aktif per platform/email.
+- Chromium profile provisioning sudah aktif per platform/email, dan connect browser profile akan membuka login session sekali saat setup awal.
 - Distribution worker sudah memproses pending `distribution_jobs`.
 - Metrics worker sudah melakukan sync snapshot metrik YouTube ke Postgres.
 - Dashboard analytics sudah menampilkan growth by niche, video, platform, dan akun.
@@ -49,7 +51,9 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 
 ## Current Notes
 
-- OAuth connect untuk Chromium profile sudah membuat profile path nyata dan mengikat ke session user.
+- Portal creator dan clipper masih perlu hardening UX/ops sebelum dianggap produk final.
+- OAuth/API connect dan browser profile connect sekarang dipisah di UI integrations.
+- Chromium profile connect membuat profile path nyata, lalu membuka login browser sekali saat setup awal.
 - YouTube API connect sekarang memakai OAuth redirect + token exchange, dengan scope read untuk analytics.
 - Dashboard videos sekarang punya panel analytics metrik dasar.
 - `distribution_jobs` dan metrics masih diproses dengan worker polling sederhana, belum queue/broker terpisah.
@@ -69,11 +73,12 @@ Dokumen ini menjadi ringkasan kerja aktual di repo `pasif-income`.
 
 ## Recommended Next Order
 
-1. Real browser automation per platform.
-2. UI checkbox platform dan account yang sudah connected.
-3. Smart scheduling untuk drip feed upload.
-4. Comparison view between accounts on same platform.
-5. Scheduled sync yang lebih cerdas per platform.
+1. Portal operasional yang lebih matang untuk creator dan clipper.
+2. Real browser automation per platform.
+3. UI checkbox platform dan account yang sudah connected.
+4. Smart scheduling untuk drip feed upload.
+5. Comparison view between accounts on same platform.
+6. Scheduled sync yang lebih cerdas per platform.
 
 ## Related Docs
 

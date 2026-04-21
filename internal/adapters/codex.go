@@ -85,6 +85,24 @@ func (c *CodexWriter) WriteScript(ctx context.Context, niche, topic string) (*do
 	return c.writeScriptWithModel(ctx, token, codexFallbackModel, niche, topic)
 }
 
+func (c *CodexWriter) Analyze(ctx context.Context, transcript string) ([]domain.ClipSegment, error) {
+	token, err := c.getAccessToken()
+	if err != nil {
+		return nil, err
+	}
+
+	segments, err := c.analyzeWithModel(ctx, token, codexDefaultModel, transcript)
+	if err == nil {
+		return segments, nil
+	}
+
+	if !isCodexUnsupportedModelError(err) {
+		return nil, err
+	}
+
+	return c.analyzeWithModel(ctx, token, codexFallbackModel, transcript)
+}
+
 func (c *CodexWriter) writeScriptWithModel(ctx context.Context, token, model, niche, topic string) (*domain.Story, error) {
 	apiURL := "https://chatgpt.com/backend-api" + codexEndpointPath
 	instructions := `Act as a Professional Faceless Channel Content Creator.
@@ -159,6 +177,86 @@ Output MUST be a JSON object:
 		return nil, fmt.Errorf("decode story: %w", err)
 	}
 	return &story, nil
+}
+
+func (c *CodexWriter) analyzeWithModel(ctx context.Context, token, model, transcript string) ([]domain.ClipSegment, error) {
+	apiURL := "https://chatgpt.com/backend-api" + codexEndpointPath
+	instructions := `Act as a Viral Marketing Expert for podcast clips.
+
+Rules:
+1. Do NOT select segments that contain music.
+2. Do NOT select segments featuring women.
+3. STRICT ISLAMIC SHARIA PRINCIPLES apply.
+
+Return JSON only.`
+
+	userPrompt := fmt.Sprintf(`Transcript:
+%s
+
+Find the most engaging short-form clip segments from the transcript.
+Output MUST be a JSON array of objects:
+[
+  {
+    "start_time": "120",
+    "end_time": "165",
+    "headline": "Why AI is the future",
+    "viral_score": 95,
+    "reasoning": "Strong hook"
+  }
+]`, transcript)
+
+	body := map[string]any{
+		"model":        model,
+		"instructions": instructions,
+		"stream":       true,
+		"store":        false,
+		"input": []any{
+			map[string]any{
+				"role":    "user",
+				"content": userPrompt,
+			},
+		},
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal codex request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("OpenAI-Beta", "responses=v1")
+	req.Header.Set("User-Agent", "pasif-income-codex-strategist/1.0")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		bodyText := strings.TrimSpace(string(bodyBytes))
+		if model == codexDefaultModel && isCodexUnsupportedModelBody(resp.StatusCode, bodyText) {
+			return nil, &codexUnsupportedModelError{status: resp.StatusCode, body: bodyText}
+		}
+		return nil, fmt.Errorf("codex api error (%d): %s", resp.StatusCode, bodyText)
+	}
+
+	jsonText, err := readCodexStream(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var segments []domain.ClipSegment
+	if err := json.Unmarshal([]byte(extractJSONPayload(jsonText)), &segments); err != nil {
+		return nil, fmt.Errorf("decode clip segments: %w", err)
+	}
+	return segments, nil
 }
 
 type codexUnsupportedModelError struct {

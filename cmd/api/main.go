@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ import (
 type generateRequest struct {
 	Niche            string               `json:"niche"`
 	Topic            string               `json:"topic"`
+	VideoURL         string               `json:"video_url"`
 	Destinations     []domain.Destination `json:"destinations"`
 	ScheduleMode     string               `json:"schedule_mode"`
 	DripIntervalDays int                  `json:"drip_interval_days"`
@@ -35,7 +37,9 @@ type generateRequest struct {
 type apiServer struct {
 	repo      ports.Repository
 	storage   ports.Storage
+	browser   *adapters.ChromiumRunner
 	generator *services.GeneratorService
+	workflow  *services.WorkflowService
 	auth      *services.AuthService
 	platform  *services.PlatformService
 	metrics   *services.MetricsService
@@ -62,6 +66,7 @@ func main() {
 	api := &apiServer{
 		repo:     repo,
 		storage:  storage,
+		browser:  adapters.NewChromiumRunnerFromEnv(),
 		auth:     services.NewAuthService(repo),
 		platform: services.NewPlatformService(repo),
 		metrics:  services.NewMetricsService(repo),
@@ -74,6 +79,7 @@ func main() {
 		log.Fatalf("Generator init failed: %v", err)
 	}
 	api.generator = generator
+	api.workflow = newWorkflowServiceFromEnv(repo, storage)
 
 	community, err := newCommunityServiceFromEnv(repo)
 	if err != nil {
@@ -106,7 +112,7 @@ func main() {
 	mux.HandleFunc("/api/auth/revoke/", api.revokeTokenHandler)
 	mux.HandleFunc("/api/platforms", api.platformsHandler)
 	mux.HandleFunc("/api/accounts", api.accountsHandler)
-	mux.HandleFunc("/api/accounts/", api.deleteAccountHandler)
+	mux.HandleFunc("/api/accounts/", api.accountByIDHandler)
 	mux.HandleFunc("/api/auth/", api.oauthHandler)
 	mux.HandleFunc("/api/videos", api.videosHandler)
 	mux.HandleFunc("/api/metrics", api.metricsHandler)
@@ -233,14 +239,11 @@ func (a *apiServer) accountsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	a.annotateBrowserStatuses(accounts)
 	writeJSON(w, http.StatusOK, accounts)
 }
 
-func (a *apiServer) deleteAccountHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
+func (a *apiServer) accountByIDHandler(w http.ResponseWriter, r *http.Request) {
 	userID, err := a.currentUserID(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -251,6 +254,27 @@ func (a *apiServer) deleteAccountHandler(w http.ResponseWriter, r *http.Request)
 		http.NotFound(w, r)
 		return
 	}
+
+	if strings.HasSuffix(id, "/launch") {
+		accountID := strings.TrimSuffix(id, "/launch")
+		accountID = strings.TrimSuffix(accountID, "/")
+		if accountID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		a.launchChromiumProfileHandler(w, r, userID, accountID)
+		return
+	}
+
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
 	account, err := a.repo.GetConnectedAccountByID(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -265,6 +289,35 @@ func (a *apiServer) deleteAccountHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *apiServer) launchChromiumProfileHandler(w http.ResponseWriter, r *http.Request, userID int, accountID string) {
+	if a.browser == nil {
+		http.Error(w, "chromium browser unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	account, err := a.repo.GetConnectedAccountByID(r.Context(), accountID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if account.UserID != userID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if account.AuthMethod != domain.AuthMethodChromiumProfile {
+		http.Error(w, "browser launch only applies to chromium profiles", http.StatusBadRequest)
+		return
+	}
+	if account.ProfilePath == "" {
+		http.Error(w, "profile path is missing", http.StatusBadRequest)
+		return
+	}
+	a.launchChromiumProfile(account)
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"status": "launching",
+		"id":     account.ID,
+	})
 }
 
 func (a *apiServer) refreshTokenHandler(w http.ResponseWriter, r *http.Request) {
@@ -354,7 +407,9 @@ func (a *apiServer) oauthHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		a.annotateBrowserStatus(acc)
 		log.Printf("Chromium profile ready for %s at %s\n", acc.Email, acc.ProfilePath)
+		a.launchChromiumProfile(acc)
 
 		if len(pathParts) > 1 && pathParts[1] == "callback" {
 			writeJSON(w, http.StatusOK, acc)
@@ -413,6 +468,52 @@ func (a *apiServer) oauthHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
+func (a *apiServer) launchChromiumProfile(account *domain.ConnectedAccount) {
+	if a == nil || a.browser == nil || account == nil {
+		return
+	}
+	if account.ProfilePath == "" {
+		log.Printf("skipping chromium launch for %s: profile path missing\n", account.ID)
+		return
+	}
+
+	targetURL := browserTargetURL(account.PlatformID)
+	if targetURL == "" {
+		log.Printf("skipping chromium launch for %s: missing target url for platform %s\n", account.ID, account.PlatformID)
+		return
+	}
+
+	go func(profilePath, platformID, targetURL string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if err := a.browser.OpenLogin(ctx, profilePath, targetURL); err != nil {
+			log.Printf("chromium profile login launch failed for %s (%s): %v\n", platformID, profilePath, err)
+		}
+	}(account.ProfilePath, account.PlatformID, targetURL)
+}
+
+func browserTargetURL(platformID string) string {
+	switch platformID {
+	case "youtube":
+		if url := strings.TrimSpace(os.Getenv("YOUTUBE_UPLOAD_URL")); url != "" {
+			return url
+		}
+		return "https://www.youtube.com/upload"
+	case "tiktok":
+		if url := strings.TrimSpace(os.Getenv("TIKTOK_UPLOAD_URL")); url != "" {
+			return url
+		}
+		return "https://www.tiktok.com/upload?lang=en"
+	case "instagram":
+		if url := strings.TrimSpace(os.Getenv("INSTAGRAM_UPLOAD_URL")); url != "" {
+			return url
+		}
+		return "https://www.instagram.com/create/select/"
+	default:
+		return ""
+	}
+}
+
 func (a *apiServer) completeYouTubeAPIConnect(r *http.Request, userID int) (*domain.ConnectedAccount, error) {
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if code == "" {
@@ -438,6 +539,49 @@ func (a *apiServer) completeYouTubeAPIConnect(r *http.Request, userID int) (*dom
 	}
 
 	return a.auth.LinkConnectedAccount(r.Context(), userID, "youtube", displayName, email, domain.AuthMethodAPI, token.AccessToken, token.RefreshToken, token.Expiry)
+}
+
+func (a *apiServer) annotateBrowserStatuses(accounts []domain.ConnectedAccount) {
+	for i := range accounts {
+		a.annotateBrowserStatus(&accounts[i])
+	}
+}
+
+func (a *apiServer) annotateBrowserStatus(account *domain.ConnectedAccount) {
+	if account == nil {
+		return
+	}
+	account.BrowserStatus = browserProfileStatus(account.ProfilePath)
+	if account.AuthMethod != domain.AuthMethodChromiumProfile {
+		account.BrowserStatus = ""
+	}
+}
+
+func browserProfileStatus(profilePath string) string {
+	profilePath = strings.TrimSpace(profilePath)
+	if profilePath == "" {
+		return ""
+	}
+
+	if _, err := os.Stat(profilePath); err != nil {
+		if os.IsNotExist(err) {
+			return "missing"
+		}
+		return "unknown"
+	}
+
+	if fileExists(filepath.Join(profilePath, "Default", "Cookies")) || fileExists(filepath.Join(profilePath, "Default", "Login Data")) {
+		return "ready"
+	}
+	if fileExists(filepath.Join(profilePath, "profile.json")) {
+		return "needs_login"
+	}
+	return "provisioned"
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func youtubeOAuthConfig() (*oauth2.Config, error) {
@@ -824,6 +968,28 @@ func newCommunityServiceFromEnv(repo ports.Repository) (*services.CommunityServi
 	return services.NewCommunityService(repo, adapters.NewGeminiCommentResponder(apiKey)), nil
 }
 
+func newWorkflowServiceFromEnv(repo ports.Repository, storage ports.Storage) *services.WorkflowService {
+	if repo == nil || storage == nil {
+		return nil
+	}
+
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	whisperURL := os.Getenv("WHISPER_URL")
+	if whisperURL == "" {
+		whisperURL = "http://whisper:9000/v1/audio/transcriptions"
+	}
+
+	return services.NewWorkflowService(
+		adapters.NewYtdlpDownloader(),
+		adapters.NewWhisperTranscriber(whisperURL),
+		adapters.NewGeminiAgent(apiKey),
+		adapters.NewFFmpegEditor(),
+		adapters.NewPythonVisionAgent("scripts/face_tracker.py"),
+		storage,
+		repo,
+	)
+}
+
 func newUploaderFromEnv() (ports.Uploader, error) {
 	endpoint := os.Getenv("MINIO_ENDPOINT")
 	if endpoint == "" {
@@ -939,6 +1105,7 @@ func (a *apiServer) generateHandler(w http.ResponseWriter, r *http.Request) {
 			ID:        makeJobID(),
 			Niche:     niche,
 			Topic:     topic,
+			VideoURL:  strings.TrimSpace(req.VideoURL),
 			Status:    "queued",
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -952,7 +1119,11 @@ func (a *apiServer) generateHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		go a.runGeneration(userID, job.ID, niche, topic, req.Destinations, req.ScheduleMode, req.DripIntervalDays, req.StartAt)
+		if strings.TrimSpace(req.VideoURL) != "" {
+			go a.runClipper(job.ID, req.VideoURL)
+		} else {
+			go a.runGeneration(userID, job.ID, niche, topic, req.Destinations, req.ScheduleMode, req.DripIntervalDays, req.StartAt)
+		}
 
 		writeJSON(w, http.StatusAccepted, job)
 	default:
@@ -1107,6 +1278,38 @@ func (a *apiServer) publishHistoryHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, jobs)
+}
+
+func (a *apiServer) runClipper(jobID, videoURL string) {
+	if a.repo != nil {
+		if err := a.repo.UpdateJobStatus(context.Background(), jobID, "running", ""); err != nil {
+			log.Printf("failed to mark job running: %v\n", err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	defer cancel()
+
+	if a.workflow == nil {
+		if a.repo != nil {
+			_ = a.repo.UpdateJobStatus(ctx, jobID, "failed", "clipper workflow unavailable")
+		}
+		return
+	}
+
+	err := a.workflow.RunPipeline(ctx, videoURL)
+	if err != nil {
+		if a.repo != nil {
+			_ = a.repo.UpdateJobStatus(ctx, jobID, "failed", err.Error())
+		}
+		return
+	}
+
+	if a.repo != nil {
+		if err := a.repo.UpdateJobStatus(ctx, jobID, "completed", ""); err != nil {
+			log.Printf("failed to mark job completed: %v\n", err)
+		}
+	}
 }
 
 func (a *apiServer) runGeneration(userID int, jobID, niche, topic string, destinations []domain.Destination, scheduleMode string, dripIntervalDays int, startAt string) {

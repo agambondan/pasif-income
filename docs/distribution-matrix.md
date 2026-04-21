@@ -4,8 +4,8 @@ Dokumen ini menjelaskan target distribusi konten untuk `pasif-income` dan bagaim
 
 ## Status Saat Ini
 
-- `creator` sudah bisa menghasilkan 1 video faceless per job.
-- `clipper` sudah bisa memproses video panjang menjadi clip pendek.
+- `creator` sudah bisa menjalankan pipeline teknis faceless per job, tetapi portal operasionalnya masih partial.
+- `clipper` sudah bisa menjalankan pipeline teknis clip pendek, tetapi portal operasionalnya masih partial.
 - Pipeline upload masih **single target** per job.
 - Belum ada UI checkbox untuk memilih multiple platform atau multiple account.
 - OAuth connect untuk akun platform sekarang diarahkan ke flow real: YouTube API OAuth atau Chromium profile linking.

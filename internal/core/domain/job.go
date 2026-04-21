@@ -28,6 +28,7 @@ type GenerationJob struct {
 	ID          string     `json:"id"`
 	Niche       string     `json:"niche"`
 	Topic       string     `json:"topic"`
+	VideoURL    string     `json:"video_url,omitempty"` // New field
 	Title       string     `json:"title,omitempty"`
 	Description string     `json:"description,omitempty"`
 	PinComment  string     `json:"pin_comment,omitempty"`

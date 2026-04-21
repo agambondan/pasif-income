@@ -10,7 +10,7 @@ test.describe('E2E Production Flow', () => {
     await expect(page).toHaveURL('/', { timeout: 15000 });
   });
 
-  test('Failed login with invalid credentials (MVP-NEG-01)', async ({ page, context }) => {
+  test('Failed login with invalid credentials (MVP-NEG-01)', async ({ context }) => {
     // We use a new context to avoid sharing session with beforeEach login
     const newPage = await context.newPage();
     await newPage.goto('/login');
