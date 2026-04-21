@@ -322,13 +322,9 @@ export default function VideoLibrary() {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20 pt-4">
-      <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-l-4 border-blue-500 pl-6">
-        <div>
-          <h2 className="text-4xl font-black text-white tracking-tighter uppercase">ASSET LIBRARY</h2>
-          <p className="text-zinc-500 mt-2 font-medium">Review raw assets, publish history, metrics, and reply drafts in one place.</p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-3">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
+      <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+        <div className="flex flex-col sm:flex-row gap-3 ml-auto">
           <button
             onClick={syncMetrics}
             disabled={isSyncingMetrics}
@@ -478,6 +474,73 @@ export default function VideoLibrary() {
               </div>
             )}
           </div>
+        </div>
+      </section>
+
+      {/* Account Performance Leaderboard (Comparison View) */}
+      <section className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between gap-4 mb-8">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Leaderboard</p>
+            <h3 className="text-2xl font-black text-white uppercase tracking-tight">Account Comparison</h3>
+          </div>
+          <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest bg-black/40 px-4 py-2 rounded-xl border border-white/5">
+            Live Metrics
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-separate border-spacing-y-3">
+            <thead>
+              <tr className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                <th className="px-6 py-4">Account ID</th>
+                <th className="px-6 py-4">Platform</th>
+                <th className="px-4 py-4 text-center">Relative Reach</th>
+                <th className="px-6 py-4 text-right">Total Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accountTrendSeries.length > 0 ? (
+                accountTrendSeries.map((series) => {
+                  const sample = metricsHistory.find(m => m.account_id === series.label);
+                  const platform = sample?.platform || 'unknown';
+                  return (
+                    <tr key={series.label} className="group/row bg-black/40 hover:bg-black/60 transition-all duration-300">
+                      <td className="px-6 py-5 rounded-l-2xl border-y border-l border-white/5">
+                        <span className="text-sm font-black text-white group-hover/row:text-blue-400 transition-colors">{series.label}</span>
+                      </td>
+                      <td className="px-6 py-5 border-y border-white/5">
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase bg-zinc-900 px-3 py-1 rounded-lg border border-white/5">
+                          {platform}
+                        </span>
+                      </td>
+                      <td className="px-4 py-5 border-y border-white/5 text-center">
+                        <div className="flex items-center gap-4 max-w-[200px] mx-auto">
+                          <div className="flex-1 bg-zinc-900 h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-gradient-to-r from-blue-600 to-blue-400 h-full shadow-[0_0_8px_rgba(59,130,246,0.4)]" style={{ width: `${Math.min(100, (series.total / (metricsSummary?.total_views || 1)) * 100)}%` }}></div>
+                          </div>
+                          <span className="text-[10px] font-mono font-bold text-zinc-500 w-10">
+                            {((series.total / (metricsSummary?.total_views || 1)) * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5 rounded-r-2xl border-y border-r border-white/5 text-right">
+                        <span className="text-sm font-black text-emerald-400 font-mono tracking-tighter">
+                          {formatNumber(series.total)} views
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={4} className="py-20 text-center text-zinc-600 font-bold uppercase tracking-widest text-[10px] border-2 border-dashed border-white/5 rounded-[2rem]">
+                    Cross-account comparison pending...
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 

@@ -67,6 +67,9 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS pin_comment TEXT DEFAULT '';
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS video_path TEXT DEFAULT '';
+		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS current_stage TEXT DEFAULT 'queued';
+		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS progress_pct INT DEFAULT 0;
+		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP NULL;
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter generation_jobs table: %v", err)
@@ -682,9 +685,9 @@ func (r *PostgresRepository) ListClips(ctx context.Context) ([]domain.Clip, erro
 
 func (r *PostgresRepository) CreateJob(ctx context.Context, job *domain.GenerationJob) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO generation_jobs (id, niche, topic, title, description, video_path, status, error, created_at, updated_at, completed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-	`, job.ID, job.Niche, job.Topic, job.Title, job.Description, job.VideoPath, job.Status, nullString(job.Error), job.CreatedAt, job.UpdatedAt, nullTimePtr(job.CompletedAt))
+		INSERT INTO generation_jobs (id, niche, topic, title, description, video_path, status, current_stage, progress_pct, error, created_at, updated_at, completed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`, job.ID, job.Niche, job.Topic, job.Title, job.Description, job.VideoPath, job.Status, job.CurrentStage, job.ProgressPct, nullString(job.Error), job.CreatedAt, job.UpdatedAt, nullTimePtr(job.CompletedAt))
 	return err
 }
 
@@ -715,37 +718,51 @@ func (r *PostgresRepository) UpdateJobStatus(ctx context.Context, jobID string, 
 	return err
 }
 
-func randomToken(size int) (string, error) {
-	b := make([]byte, size)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
+func (r *PostgresRepository) UpdateJobProgress(ctx context.Context, jobID string, stage string, progress int) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE generation_jobs
+		SET current_stage = $1, progress_pct = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $3
+	`, stage, progress, jobID)
+	return err
+}
+
+func (r *PostgresRepository) CancelJob(ctx context.Context, jobID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE generation_jobs
+		SET status = 'failed', error = 'cancelled by operator', cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND status IN ('queued', 'running')
+	`, jobID)
+	return err
 }
 
 func (r *PostgresRepository) GetJob(ctx context.Context, jobID string) (*domain.GenerationJob, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, niche, topic, COALESCE(title, ''), COALESCE(description, ''), COALESCE(pin_comment, ''), COALESCE(video_path, ''), status, COALESCE(error, ''), created_at, updated_at, completed_at
+		SELECT id, niche, topic, COALESCE(video_url, ''), COALESCE(title, ''), COALESCE(description, ''), COALESCE(pin_comment, ''), COALESCE(video_path, ''), status, COALESCE(current_stage, ''), progress_pct, COALESCE(error, ''), created_at, updated_at, completed_at, cancelled_at
 		FROM generation_jobs
 		WHERE id = $1
 	`, jobID)
 
 	var job domain.GenerationJob
-	var errorText string
-	var completedAt sql.NullTime
-	if err := row.Scan(&job.ID, &job.Niche, &job.Topic, &job.Title, &job.Description, &job.PinComment, &job.VideoPath, &job.Status, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt); err != nil {
+	var errorText, stage string
+	var completedAt, cancelledAt sql.NullTime
+	if err := row.Scan(&job.ID, &job.Niche, &job.Topic, &job.VideoURL, &job.Title, &job.Description, &job.PinComment, &job.VideoPath, &job.Status, &stage, &job.ProgressPct, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt, &cancelledAt); err != nil {
 		return nil, err
 	}
 	job.Error = errorText
+	job.CurrentStage = stage
 	if completedAt.Valid {
 		job.CompletedAt = &completedAt.Time
+	}
+	if cancelledAt.Valid {
+		job.CancelledAt = &cancelledAt.Time
 	}
 	return &job, nil
 }
 
 func (r *PostgresRepository) ListJobs(ctx context.Context) ([]domain.GenerationJob, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, niche, topic, COALESCE(title, ''), COALESCE(description, ''), COALESCE(pin_comment, ''), COALESCE(video_path, ''), status, COALESCE(error, ''), created_at, updated_at, completed_at
+		SELECT id, niche, topic, COALESCE(video_url, ''), status, COALESCE(current_stage, ''), progress_pct, COALESCE(error, ''), created_at, updated_at, completed_at, cancelled_at
 		FROM generation_jobs
 		ORDER BY updated_at DESC
 	`)
@@ -757,18 +774,30 @@ func (r *PostgresRepository) ListJobs(ctx context.Context) ([]domain.GenerationJ
 	jobs := []domain.GenerationJob{}
 	for rows.Next() {
 		var job domain.GenerationJob
-		var errorText string
-		var completedAt sql.NullTime
-		if err := rows.Scan(&job.ID, &job.Niche, &job.Topic, &job.Title, &job.Description, &job.PinComment, &job.VideoPath, &job.Status, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt); err != nil {
+		var errorText, stage string
+		var completedAt, cancelledAt sql.NullTime
+		if err := rows.Scan(&job.ID, &job.Niche, &job.Topic, &job.VideoURL, &job.Status, &stage, &job.ProgressPct, &errorText, &job.CreatedAt, &job.UpdatedAt, &completedAt, &cancelledAt); err != nil {
 			return nil, err
 		}
 		job.Error = errorText
+		job.CurrentStage = stage
 		if completedAt.Valid {
 			job.CompletedAt = &completedAt.Time
+		}
+		if cancelledAt.Valid {
+			job.CancelledAt = &cancelledAt.Time
 		}
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
+}
+
+func randomToken(size int) (string, error) {
+	b := make([]byte, size)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func nullString(value string) interface{} {

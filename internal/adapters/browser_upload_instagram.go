@@ -14,6 +14,7 @@ func automateInstagramUpload(ctx context.Context, filePath, title, description s
 		return fmt.Errorf("instagram create button not found: %w", err)
 	}
 
+	// Wait for the modal/dropzone to be ready
 	_ = waitShort(ctx)
 
 	if progress != nil {

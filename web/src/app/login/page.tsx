@@ -45,20 +45,20 @@ export default function LoginPage() {
          <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-blue-500/5 rounded-full blur-[120px]"></div>
       </div>
 
-      <div className="w-full max-w-md bg-[#0c0c10] border border-white/5 rounded-[2.5rem] p-12 shadow-2xl relative z-10 animate-in fade-in zoom-in duration-500">
+        <div className="w-full max-w-md bg-[#0c0c10] border border-white/5 rounded-[2.5rem] p-12 shadow-2xl relative z-10 animate-in fade-in zoom-in duration-500">
         <div className="text-center mb-12">
           <div className="w-16 h-16 bg-linear-to-br from-emerald-400 to-blue-500 rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-lg shadow-emerald-500/20">
              <span className="text-white text-3xl font-black italic">CF</span>
           </div>
           <h1 className="text-3xl font-black text-white tracking-tighter uppercase">
-            OPERATOR LOGIN
+            OPERATIONS LOGIN
           </h1>
-          <p className="text-zinc-500 mt-2 text-xs font-bold uppercase tracking-widest">Pipeline Access Control</p>
+          <p className="text-zinc-500 mt-2 text-xs font-bold uppercase tracking-widest">Access the dashboard and connected workflow modules</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-8">
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">Identifier</label>
+            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">Username</label>
             <input
               type="text"
               value={username}
@@ -69,7 +69,7 @@ export default function LoginPage() {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">Security Key</label>
+            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">Password</label>
             <input
               type="password"
               value={password}
@@ -94,13 +94,18 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-5 rounded-2xl transition-all duration-300 transform active:scale-95 shadow-xl shadow-emerald-900/20 text-sm tracking-[0.2em]"
           >
-            {loading ? 'AUTHENTICATING...' : 'ESTABLISH CONNECTION'}
+            {loading ? 'SYNCING SESSION...' : 'OPEN DASHBOARD'}
           </button>
         </form>
 
         <div className="mt-12 text-center">
-           <div className="inline-block px-4 py-1.5 rounded-full bg-zinc-900 border border-white/5 text-[10px] font-black text-zinc-600 uppercase tracking-tighter">
-              Default Node: admin / admin123
+           <div className="space-y-3">
+             <div className="inline-block px-4 py-1.5 rounded-full bg-zinc-900 border border-white/5 text-[10px] font-black text-zinc-600 uppercase tracking-tighter">
+                After login: Operations, Research, Clipper, Review, Library, Integrations
+             </div>
+             <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">
+               One session unlocks the full dashboard shell.
+             </p>
            </div>
         </div>
       </div>

@@ -43,6 +43,7 @@ export default function Integrations() {
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectEmail, setConnectEmail] = useState<Record<string, string>>({});
+  const [manualApi, setManualApi] = useState<Record<string, { name: string; key: string }>>({});
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
 
@@ -53,7 +54,7 @@ export default function Integrations() {
           fetch('/api/platforms', { credentials: 'include' }),
           fetch('/api/accounts', { credentials: 'include' })
         ]);
-        
+
         if (platRes.ok) {
           const p = await platRes.json();
           setPlatforms(p || []);
@@ -75,13 +76,47 @@ export default function Integrations() {
     setBusy((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleApiConnect = async (platformId: string) => {
-    setBusyKey(`${platformId}:api`, true);
+  const handleOAuthConnect = async (platformId: string) => {
+    setBusyKey(`${platformId}:oauth`, true);
     try {
       setStatusMessage(null);
       window.location.assign(`/api/auth/${platformId}?method=api`);
     } finally {
-      setBusyKey(`${platformId}:api`, false);
+      setBusyKey(`${platformId}:oauth`, false);
+    }
+  };
+
+  const handleManualApiConnect = async (platformId: string) => {
+    const data = manualApi[platformId] || { name: '', key: '' };
+    if (!data.key.trim()) {
+      alert('API Key must be filled.');
+      return;
+    }
+
+    setBusyKey(`${platformId}:manual`, true);
+    try {
+      const res = await fetch('/api/accounts/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform_id: platformId,
+          display_name: data.name.trim() || `${platformId.toUpperCase()} Manual`,
+          api_key: data.key.trim(),
+        }),
+        credentials: 'include',
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+
+      const newAcc = await res.json();
+      setAccounts((prev) => [...prev, newAcc]);
+      setManualApi((prev) => ({ ...prev, [platformId]: { name: '', key: '' } }));
+      setStatusMessage(`API Key for ${platformId} connected successfully.`);
+    } catch (err) {
+      console.error('Failed to connect manual API:', err);
+      setStatusMessage(err instanceof Error ? err.message : 'Failed to connect manual API');
+    } finally {
+      setBusyKey(`${platformId}:manual`, false);
     }
   };
 
@@ -101,7 +136,18 @@ export default function Integrations() {
       if (!res.ok) {
         throw new Error(await res.text());
       }
+
+      // Refresh accounts list to show the new one
+      const accRes = await fetch('/api/accounts', { credentials: 'include' });
+      if (accRes.ok) {
+        const a = await accRes.json();
+        setAccounts(a || []);
+      }
+
       setStatusMessage(`Browser login queued for ${email}. Open the host launcher to open Chromium on your desktop.`);
+    } catch (err) {
+        console.error('Failed to connect browser:', err);
+        setStatusMessage(err instanceof Error ? err.message : 'Failed to connect browser');
     } finally {
       setBusyKey(`${platformId}:browser`, false);
     }
@@ -160,29 +206,16 @@ export default function Integrations() {
     }
   };
 
-  return (
-    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 pt-10">
-      <div className="border-l-4 border-emerald-500 pl-6">
-        <h2 className="text-4xl font-black text-white tracking-tighter">INTEGRATIONS</h2>
-        <p className="text-zinc-500 mt-2 font-medium">
-          Separate API connections and Chromium profiles. Profile connects open a login browser once, then reuse the saved profile on publish.
-        </p>
-        <div className="mt-4 space-y-2 rounded-2xl border border-white/5 bg-black/20 px-4 py-3 max-w-3xl">
-          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-            API Auth is for token-based publishing and analytics.
-          </p>
-          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-            Chromium Profile is for email lookup, one-time login setup, and profile reuse during publish.
-          </p>
-          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-            Use Open Login after Create & Open Profile if the browser session needs manual sign-in.
-          </p>
-        </div>
-      </div>
+  const browserAccounts = accounts.filter((a) => a.auth_method === 'chromium_profile');
 
+  return (
+    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
       {statusMessage && (
-        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-5 py-4 text-sm font-medium text-emerald-300">
-          {statusMessage}
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-5 py-4 text-sm font-medium text-emerald-300 flex justify-between items-center">
+          <span>{statusMessage}</span>
+          <button onClick={() => setStatusMessage(null)} className="text-emerald-500 hover:text-emerald-400">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
         </div>
       )}
 
@@ -191,168 +224,223 @@ export default function Integrations() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]"></div>
         </div>
       ) : (
-        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-          {platforms.map((platform) => {
-            const apiAccounts = accounts.filter((a) => a.platform_id === platform.id && a.auth_method === 'api');
-            const browserAccounts = accounts.filter((a) => a.platform_id === platform.id && a.auth_method === 'chromium_profile');
-            const supportsApi = platform.supported_methods.includes('api');
-            const supportsBrowser = platform.supported_methods.includes('chromium_profile');
-            
-            return (
-              <div key={platform.id} className="bg-card border border-white/5 rounded-[2rem] p-8 flex flex-col hover:border-emerald-500/30 transition-all duration-300 group relative overflow-hidden shadow-2xl shadow-black/40">
-                <div className="absolute -top-24 -right-24 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl group-hover:bg-emerald-500/10 transition-colors"></div>
-                
-                <div className="flex justify-between items-start mb-8 relative z-10">
-                  <div className="w-16 h-16 bg-zinc-900 rounded-2xl flex items-center justify-center text-4xl shadow-inner border border-white/5 group-hover:scale-110 transition-transform duration-500 group-hover:shadow-emerald-500/20 group-hover:shadow-lg">
-                    {platform.id === 'youtube' ? '📺' : platform.id === 'tiktok' ? '🎵' : '📸'}
+        <div className="space-y-20">
+          {/* Section 1: API KEYS */}
+          <section>
+            <div className="flex items-center gap-4 mb-8">
+              <div className="h-px flex-1 bg-white/5"></div>
+              <h3 className="text-xl font-black text-white tracking-widest uppercase flex items-center gap-3">
+                <span className="text-blue-500">◆</span> Social Media API Keys
+              </h3>
+              <div className="h-px flex-1 bg-white/5"></div>
+            </div>
+
+            <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+              {platforms.map((platform) => {
+                const apiAccs = accounts.filter((a) => a.platform_id === platform.id && a.auth_method === 'api');
+                const pManual = manualApi[platform.id] || { name: '', key: '' };
+
+                return (
+                  <div key={platform.id} className="bg-card border border-white/5 rounded-[2.5rem] p-8 flex flex-col hover:border-blue-500/30 transition-all duration-500 group relative overflow-hidden shadow-2xl shadow-black/40">
+                    <div className="flex items-center gap-4 mb-6">
+                       <div className="w-12 h-12 bg-zinc-900 rounded-xl flex items-center justify-center text-2xl border border-white/5 shadow-inner group-hover:scale-110 transition-transform">
+                        {platform.id === 'youtube' ? '📺' : platform.id === 'tiktok' ? '🎵' : '📸'}
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">{platform.name}</h4>
+                        <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Token Auth</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 mb-8">
+                      {apiAccs.length > 0 ? (
+                        apiAccs.map((acc) => (
+                          <div key={acc.id} className="flex items-center justify-between gap-3 bg-black/40 p-4 rounded-2xl border border-white/5 group/item">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-white truncate">{acc.display_name}</p>
+                              <p className="text-[10px] text-zinc-500 uppercase tracking-widest truncate">{acc.email || 'API KEY'}</p>
+                            </div>
+                            <button
+                              onClick={() => handleDisconnect(acc.id)}
+                              className="text-zinc-600 hover:text-red-400 transition-colors p-1 opacity-0 group-hover/item:opacity-100"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="py-8 flex flex-col items-center justify-center border border-dashed border-white/5 rounded-2xl bg-black/10">
+                          <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">No API Accounts</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-auto space-y-4">
+                      <div className="p-5 rounded-3xl bg-black/20 border border-white/5 space-y-3">
+                         <input
+                          value={pManual.name}
+                          onChange={(e) => setManualApi(prev => ({ ...prev, [platform.id]: { ...pManual, name: e.target.value } }))}
+                          placeholder="Account Name (Optional)"
+                          className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-blue-500/40 transition-colors"
+                        />
+                        <input
+                          value={pManual.key}
+                          onChange={(e) => setManualApi(prev => ({ ...prev, [platform.id]: { ...pManual, key: e.target.value } }))}
+                          placeholder="Enter API Key / Token"
+                          className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-blue-500/40 transition-colors"
+                        />
+                        <button
+                          onClick={() => handleManualApiConnect(platform.id)}
+                          disabled={busy[`${platform.id}:manual`]}
+                          className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-blue-900/20"
+                        >
+                          {busy[`${platform.id}:manual`] ? 'CONNECTING...' : 'Add API Key'}
+                        </button>
+                      </div>
+
+                      {platform.id === 'youtube' && (
+                        <button
+                          onClick={() => handleOAuthConnect(platform.id)}
+                          disabled={busy[`${platform.id}:oauth`]}
+                          className="w-full py-3 border border-white/10 hover:bg-white/5 text-white text-[11px] font-black uppercase tracking-widest rounded-xl transition-all"
+                        >
+                           {busy[`${platform.id}:oauth`] ? 'CONNECTING...' : 'Connect with OAuth'}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  {(apiAccounts.length > 0 || browserAccounts.length > 0) && (
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full animate-pulse">ACTIVE</span>
-                  )}
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Section 2: BROWSER PROFILES */}
+          <section>
+            <div className="flex items-center gap-4 mb-8">
+              <div className="h-px flex-1 bg-white/5"></div>
+              <h3 className="text-xl font-black text-white tracking-widest uppercase flex items-center gap-3">
+                <span className="text-emerald-500">◆</span> Browser Profiles
+              </h3>
+              <div className="h-px flex-1 bg-white/5"></div>
+            </div>
+
+            <div className="grid gap-8 lg:grid-cols-3">
+              {/* Creator Card */}
+              <div className="bg-zinc-900/50 border border-emerald-500/20 rounded-[2.5rem] p-8 flex flex-col shadow-2xl">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center text-2xl border border-emerald-500/20 text-emerald-500 shadow-inner">
+                    🌐
+                  </div>
+                  <div>
+                    <h4 className="text-xl font-bold text-white">Create Profile</h4>
+                    <p className="text-[10px] font-black text-emerald-500/60 uppercase tracking-widest">New Browser Session</p>
+                  </div>
                 </div>
-                
-                <h3 className="text-2xl font-bold text-white mb-2 group-hover:text-emerald-400 transition-colors">{platform.name}</h3>
-                <p className="text-zinc-400 text-sm mb-8 leading-relaxed font-medium">{platform.description}</p>
 
-                <div className="grid gap-5 lg:grid-cols-2 relative z-10">
-                  <div className="rounded-[1.5rem] border border-white/5 bg-black/30 p-5">
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                      <div>
-                        <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">API Auth</p>
-                        <h4 className="text-lg font-black text-white">Token Based</h4>
-                      </div>
-                      <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Clean / direct</span>
-                    </div>
-                    <div className="space-y-3">
-                      {supportsApi ? (
-                        apiAccounts.length > 0 ? (
-                          apiAccounts.map((acc) => (
-                            <div key={acc.id} className="flex items-center justify-between gap-3 bg-black/40 p-4 rounded-2xl border border-white/5">
-                              <div className="min-w-0">
-                                <p className="text-sm font-bold text-white truncate">{acc.display_name}</p>
-                                <p className="text-[10px] text-zinc-500 uppercase tracking-widest truncate">{acc.email || 'API account'}</p>
-                              </div>
-                              <button
-                                onClick={() => handleDisconnect(acc.id)}
-                                className="text-zinc-600 hover:text-red-400 transition-colors p-1 flex-shrink-0"
-                                title="Disconnect"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                              </button>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="h-24 flex items-center justify-center border border-dashed border-white/5 rounded-2xl">
-                            <p className="text-[11px] font-bold text-zinc-600 uppercase tracking-widest">No API accounts</p>
-                          </div>
-                        )
-                      ) : (
-                        <div className="h-24 flex items-center justify-center border border-dashed border-white/5 rounded-2xl">
-                          <p className="text-[11px] font-bold text-zinc-600 uppercase tracking-widest">Not supported</p>
-                        </div>
-                      )}
-                      {supportsApi && (
+                <p className="text-xs text-zinc-500 mb-8 leading-relaxed">
+                  Generate a dedicated Chromium profile for a specific account. This allows you to stay logged in and bypass OAuth restrictions during automated publishing.
+                </p>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">Select Platform</label>
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      {platforms.map(p => (
                         <button
-                          onClick={() => handleApiConnect(platform.id)}
-                          disabled={busy[`${platform.id}:api`]}
-                          className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl transition-all duration-300 transform active:scale-95 shadow-lg shadow-blue-900/20"
+                          key={p.id}
+                          onClick={() => setConnectEmail(prev => ({ ...prev, selectedPlatform: p.id }))}
+                          className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-tighter border transition-all ${
+                            (connectEmail['selectedPlatform'] || 'youtube') === p.id
+                            ? 'bg-emerald-500 border-emerald-500 text-black'
+                            : 'bg-black/40 border-white/5 text-zinc-500 hover:border-emerald-500/40'
+                          }`}
                         >
-                          {busy[`${platform.id}:api`] ? 'CONNECTING...' : 'CONNECT API'}
+                          {p.name}
                         </button>
-                      )}
+                      ))}
                     </div>
                   </div>
 
-                  <div className="rounded-[1.5rem] border border-emerald-500/10 bg-emerald-500/5 p-5">
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                      <div>
-                        <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Browser Profile</p>
-                        <h4 className="text-lg font-black text-white">Chrome Login</h4>
-                      </div>
-                      <span className="text-[9px] font-black uppercase tracking-widest text-emerald-300">Email lookup</span>
-                    </div>
-                    <p className="mb-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest leading-relaxed">
-                      Connect once, sign in in the opened browser, then reuse the profile on publish without opening Chrome again.
-                    </p>
-
-                    <label className="mb-4 block">
-                      <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Profile Email</span>
-                      <input
-                        value={connectEmail[platform.id] || ''}
-                        onChange={(event) => setConnectEmail((prev) => ({ ...prev, [platform.id]: event.target.value }))}
-                        placeholder="agam.pro234@gmail.com"
-                        className="mt-2 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/40"
-                      />
-                    </label>
-
-                    <div className="space-y-3">
-                      {supportsBrowser ? (
-                        browserAccounts.length > 0 ? (
-                          browserAccounts.map((acc) => (
-                            <div key={acc.id} className="bg-black/40 p-4 rounded-2xl border border-emerald-500/10">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="text-sm font-bold text-white truncate">{acc.display_name}</p>
-                                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest truncate">{acc.email}</p>
-                                  <p className="text-[10px] text-zinc-600 mt-1 break-all">Profile: {acc.profile_path || '-'}</p>
-                                  {acc.auth_method === 'chromium_profile' && (
-                                    <span className={`inline-flex items-center mt-2 px-2.5 py-1 rounded-full border text-[9px] font-black uppercase tracking-widest ${browserStatusMeta(acc.browser_status).className}`}>
-                                      {browserStatusMeta(acc.browser_status).label}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex flex-col gap-2">
-                                  <button
-                                    onClick={() => handleLaunchBrowser(acc.id)}
-                                    disabled={busy[`${acc.id}:launch`]}
-                                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
-                                  >
-                                    {busy[`${acc.id}:launch`] ? 'OPENING...' : 'Open Login'}
-                                  </button>
-                                  <button
-                                    onClick={() => handleRefreshBrowserStatus(acc.id)}
-                                    disabled={busy[`${acc.id}:status`]}
-                                    className="px-4 py-2 rounded-xl border border-white/10 bg-black/30 hover:bg-white/5 text-white text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
-                                  >
-                                    {busy[`${acc.id}:status`] ? 'REFRESHING...' : 'Refresh Status'}
-                                  </button>
-                                  <button
-                                    onClick={() => handleDisconnect(acc.id)}
-                                    className="text-zinc-600 hover:text-red-400 transition-colors p-1 self-center"
-                                    title="Disconnect"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="h-24 flex items-center justify-center border border-dashed border-emerald-500/15 rounded-2xl bg-black/20">
-                            <p className="text-[11px] font-bold text-zinc-600 uppercase tracking-widest">No browser profiles</p>
-                          </div>
-                        )
-                      ) : (
-                        <div className="h-24 flex items-center justify-center border border-dashed border-white/5 rounded-2xl">
-                          <p className="text-[11px] font-bold text-zinc-600 uppercase tracking-widest">Not supported</p>
-                        </div>
-                      )}
-
-                      {supportsBrowser && (
-                        <button
-                          onClick={() => handleBrowserConnect(platform.id)}
-                          disabled={busy[`${platform.id}:browser`]}
-                          className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl transition-all duration-300 transform active:scale-95 shadow-lg shadow-emerald-900/20 relative z-10"
-                        >
-                          {busy[`${platform.id}:browser`] ? 'OPENING...' : 'CREATE & OPEN PROFILE'}
-                        </button>
-                      )}
-                    </div>
+                  <div>
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">Email Address</label>
+                    <input
+                      value={connectEmail[connectEmail['selectedPlatform'] || 'youtube'] || ''}
+                      onChange={(e) => setConnectEmail(prev => ({ ...prev, [connectEmail['selectedPlatform'] || 'youtube']: e.target.value }))}
+                      placeholder="account@gmail.com"
+                      className="mt-2 w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-emerald-500/40 transition-colors"
+                    />
                   </div>
+
+                  <button
+                    onClick={() => handleBrowserConnect(connectEmail['selectedPlatform'] || 'youtube')}
+                    disabled={busy[`${connectEmail['selectedPlatform'] || 'youtube'}:browser`]}
+                    className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[11px] font-black uppercase tracking-widest rounded-2xl transition-all shadow-lg shadow-emerald-900/40"
+                  >
+                    {busy[`${connectEmail['selectedPlatform'] || 'youtube'}:browser`] ? 'CREATING...' : 'CREATE & OPEN PROFILE'}
+                  </button>
                 </div>
               </div>
-            );
-          })}
+
+              {/* Profiles List */}
+              <div className="lg:col-span-2 grid gap-6 md:grid-cols-2">
+                {browserAccounts.length > 0 ? (
+                  browserAccounts.map((acc) => (
+                    <div key={acc.id} className="bg-black/30 border border-white/5 rounded-[2rem] p-6 hover:border-emerald-500/20 transition-all group relative overflow-hidden">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-zinc-900 rounded-lg flex items-center justify-center text-xl border border-white/5">
+                            {acc.platform_id === 'youtube' ? '📺' : acc.platform_id === 'tiktok' ? '🎵' : '📸'}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-white truncate">{acc.display_name}</p>
+                            <p className="text-[9px] text-zinc-500 uppercase tracking-widest">{acc.email}</p>
+                          </div>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full border text-[8px] font-black uppercase tracking-widest ${browserStatusMeta(acc.browser_status).className}`}>
+                          {browserStatusMeta(acc.browser_status).label}
+                        </span>
+                      </div>
+
+                      <div className="bg-black/40 rounded-xl p-3 mb-4">
+                        <p className="text-[8px] font-black text-zinc-600 uppercase tracking-widest mb-1">Local Path</p>
+                        <p className="text-[9px] text-zinc-500 truncate font-mono">{acc.profile_path}</p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => handleLaunchBrowser(acc.id)}
+                          disabled={busy[`${acc.id}:launch`]}
+                          className="py-2.5 rounded-xl bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-500 text-[10px] font-black uppercase tracking-widest transition-all"
+                        >
+                          {busy[`${acc.id}:launch`] ? 'Opening...' : 'Open Browser'}
+                        </button>
+                        <button
+                          onClick={() => handleRefreshBrowserStatus(acc.id)}
+                          disabled={busy[`${acc.id}:status`]}
+                          className="py-2.5 rounded-xl border border-white/5 bg-black/40 hover:bg-black/60 text-white text-[10px] font-black uppercase tracking-widest transition-all"
+                        >
+                          {busy[`${acc.id}:status`] ? 'Wait...' : 'Sync Status'}
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => handleDisconnect(acc.id)}
+                        className="absolute top-4 right-4 text-zinc-700 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                        title="Delete Profile"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="col-span-full h-full flex flex-col items-center justify-center border border-dashed border-white/5 rounded-[2.5rem] bg-black/10 py-20">
+                    <div className="text-4xl mb-4 opacity-20 text-emerald-500">🪹</div>
+                    <p className="text-[11px] font-black text-zinc-600 uppercase tracking-widest">No profiles configured yet</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
         </div>
       )}
     </div>

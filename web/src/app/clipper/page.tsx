@@ -1,12 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-
-type ConnectedAccount = {
-    id: string;
-    platform_id: string;
-    display_name: string;
-};
+import AccountSelector, {
+    type ConnectedAccount,
+} from '@/components/account-selector';
 
 export default function VideoClipper() {
     const [videoUrl, setVideoUrl] = useState("");
@@ -92,12 +89,7 @@ export default function VideoClipper() {
     };
 
     return (
-        <div className='space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pt-4 pb-10'>
-            <div className='border-l-4 border-emerald-500 pl-6'>
-                <h2 className='text-4xl font-black text-white tracking-tighter uppercase'>Podcast Clips Factory</h2>
-                <p className='text-zinc-500 mt-2 font-medium'>Transform long-form videos into viral vertical clips using Vision AI.</p>
-            </div>
-
+        <div className='space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10'>
             <div className='w-full'>
                 <div className='bg-card border border-white/5 rounded-[3rem] p-12 shadow-2xl relative overflow-hidden group'>
                     <div className='absolute -top-24 -right-24 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl group-hover:bg-emerald-500/10 transition-colors'></div>
@@ -135,42 +127,15 @@ export default function VideoClipper() {
 
                             {/* Distribution Matrix Section */}
                             <div className='space-y-4'>
-                                <div className='flex items-center justify-between px-2'>
-                                    <span className='text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]'>Target Distribution Matrix</span>
-                                    <span className='text-[10px] font-bold text-emerald-500 uppercase'>{selectedAccounts.length} Selected</span>
-                                </div>
-                                
-                                {accounts.length > 0 ? (
-                                    <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
-                                        {accounts.map((acc) => (
-                                            <label
-                                                key={acc.id}
-                                                className={`flex items-center gap-4 border p-5 rounded-2xl cursor-pointer transition-all duration-300 ${selectedAccounts.includes(acc.id) ? "bg-emerald-500/10 border-emerald-500/50 shadow-lg shadow-emerald-500/5" : "bg-black/40 border-white/5 hover:border-white/20 hover:bg-black/60"}`}
-                                            >
-                                                <input
-                                                    type='checkbox'
-                                                    className='hidden'
-                                                    checked={selectedAccounts.includes(acc.id)}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) setSelectedAccounts([...selectedAccounts, acc.id]);
-                                                        else setSelectedAccounts(selectedAccounts.filter(id => id !== acc.id));
-                                                    }}
-                                                />
-                                                <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${selectedAccounts.includes(acc.id) ? "bg-emerald-500 border-emerald-500" : "border-zinc-700"}`}>
-                                                    {selectedAccounts.includes(acc.id) && <span className='text-black text-xs font-black'>✓</span>}
-                                                </div>
-                                                <div className='flex flex-col'>
-                                                    <span className='text-sm font-bold text-white'>{acc.display_name}</span>
-                                                    <span className='text-[9px] text-zinc-500 font-black uppercase tracking-widest'>{acc.platform_id}</span>
-                                                </div>
-                                            </label>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className='bg-black/40 border border-dashed border-white/10 rounded-2xl p-8 text-center'>
-                                        <p className='text-zinc-600 text-[10px] font-black uppercase tracking-widest'>No connected accounts found. Go to Integrations first.</p>
-                                    </div>
-                                )}
+                                <AccountSelector
+                                    title='Target Distribution Matrix'
+                                    subtitle='Choose the destination accounts that will receive the clip job.'
+                                    selectionHint='Only ready Chromium profiles and API accounts can be selected.'
+                                    accounts={accounts}
+                                    selectedIds={selectedAccounts}
+                                    onChange={setSelectedAccounts}
+                                    emptyMessage='No connected accounts found. Go to Integrations first.'
+                                />
                             </div>
 
                             <button

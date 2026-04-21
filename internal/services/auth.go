@@ -92,11 +92,8 @@ func (s *AuthService) LinkConnectedAccount(ctx context.Context, userID int, plat
 	}
 
 	if authMethod == domain.AuthMethodAPI {
-		if platformID != "youtube" {
-			return nil, fmt.Errorf("api auth is only wired for youtube right now")
-		}
 		if acc.AccessToken == "" {
-			return nil, errors.New("access token is required for youtube api linking")
+			return nil, errors.New("access token is required for api linking")
 		}
 	}
 

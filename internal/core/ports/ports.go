@@ -18,6 +18,7 @@ type Repository interface {
 	ListClips(ctx context.Context) ([]domain.Clip, error)
 	CreateJob(ctx context.Context, job *domain.GenerationJob) error
 	UpdateJobArtifact(ctx context.Context, jobID string, title string, description string, pinComment string, videoPath string) error
+	UpdateJobProgress(ctx context.Context, jobID string, stage string, progress int) error
 	UpdateJobStatus(ctx context.Context, jobID string, status string, errMsg string) error
 	GetJob(ctx context.Context, jobID string) (*domain.GenerationJob, error)
 	ListJobs(ctx context.Context) ([]domain.GenerationJob, error)
@@ -26,6 +27,7 @@ type Repository interface {
 	ListDistributionJobs(ctx context.Context, generationJobID string) ([]domain.DistributionJob, error)
 	ListAllDistributionJobs(ctx context.Context, userID int) ([]domain.DistributionJob, error)
 	UpdateDistributionJobStatus(ctx context.Context, jobID int, status string, statusDetail string, externalID string, errMsg string) error
+	CancelJob(ctx context.Context, jobID string) error
 
 	// Users & Auth
 	ListUsers(ctx context.Context) ([]domain.User, error)

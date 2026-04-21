@@ -25,19 +25,22 @@ type DistributionJob struct {
 
 // GenerationJob represents a persisted generation request and its status.
 type GenerationJob struct {
-	ID          string     `json:"id"`
-	Niche       string     `json:"niche"`
-	Topic       string     `json:"topic"`
-	VideoURL    string     `json:"video_url,omitempty"` // New field
-	Title       string     `json:"title,omitempty"`
-	Description string     `json:"description,omitempty"`
-	PinComment  string     `json:"pin_comment,omitempty"`
-	VideoPath   string     `json:"video_path,omitempty"`
-	Status      string     `json:"status"`
-	Error       string     `json:"error,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	ID           string     `json:"id"`
+	Niche        string     `json:"niche"`
+	Topic        string     `json:"topic"`
+	VideoURL     string     `json:"video_url,omitempty"`
+	Title        string     `json:"title,omitempty"`
+	Description  string     `json:"description,omitempty"`
+	PinComment   string     `json:"pin_comment,omitempty"`
+	VideoPath    string     `json:"video_path,omitempty"`
+	Status       string     `json:"status"`
+	CurrentStage string     `json:"current_stage,omitempty"` // research, script, voice, render, etc.
+	ProgressPct  int        `json:"progress_pct"`           // 0-100
+	Error        string     `json:"error,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	CancelledAt  *time.Time `json:"cancelled_at,omitempty"`
 }
 
 type VideoMetricSnapshot struct {

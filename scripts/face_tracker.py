@@ -44,7 +44,8 @@ def get_face_x(video_path, start_sec, end_sec):
     if len(x_coords) == 0:
         return 1920 // 2 # Return center if no face detected
 
-    return int(np.mean(x_coords))
+    # Use median to handle camera cuts and outliers better than mean
+    return int(np.median(x_coords))
 
 if __name__ == "__main__":
     # Usage: python face_tracker.py video.mp4 10 45

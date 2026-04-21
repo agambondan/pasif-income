@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
+
+	"github.com/chromedp/chromedp"
 )
 
 func automateTikTokUpload(ctx context.Context, filePath, title, description string, progress func(string)) error {
@@ -22,8 +25,15 @@ func automateTikTokUpload(ctx context.Context, filePath, title, description stri
 	if progress != nil {
 		progress("waiting_for_processing")
 	}
-	_ = waitShort(ctx)
-	_ = waitShort(ctx)
+	// Wait for the "Edit" button or title field to become stable, indicating upload finished
+	// TikTok usually shows a progress bar or "Uploading" text
+	err := chromedp.Run(ctx,
+		chromedp.WaitVisible(tiktokCaptionSelectors()[0], chromedp.ByQuery),
+		chromedp.Sleep(1*time.Second),
+	)
+	if err != nil {
+		log.Printf("Warning: waiting for tiktok processing timed out: %v\n", err)
+	}
 
 	if progress != nil {
 		progress("filling_metadata")

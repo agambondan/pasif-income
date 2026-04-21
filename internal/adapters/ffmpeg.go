@@ -30,7 +30,8 @@ func (e *FFmpegEditor) CropAndRender(ctx context.Context, videoPath string, seg 
 	}
 	defer os.Remove(srtPath)
 
-	subStyle := "Alignment=10,FontSize=24,PrimaryColour=&H00FFFF&,Outline=1"
+	// Viral Style: Large Yellow Text, Centered Bottom, Thick Outline
+	subStyle := "Alignment=2,FontSize=28,PrimaryColour=&H00FFFF&,OutlineColour=&H000000&,Outline=2,Shadow=1,MarginV=40"
 	filters := fmt.Sprintf("crop=ih*9/16:ih:(%d-((ih*9/16)/2)):0,scale=608:1080,subtitles=%s:force_style='%s'", faceX, srtPath, subStyle)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg",

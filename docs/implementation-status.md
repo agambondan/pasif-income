@@ -36,6 +36,7 @@ Catatan: `done` di sini berarti produk/portal operasional lengkap. Dengan defini
   - `creator`
 - Session-based dashboard auth sudah aktif via cookie backend.
 - Chromium profile provisioning sudah aktif per platform/email, dan connect browser profile akan membuka login session sekali saat setup awal.
+- Generator dan clipper sekarang memakai account picker yang dikelompokkan per platform, lengkap dengan Select All/Clear, badge auth method, dan gating browser profile yang belum `ready`.
 - Voice preset dashboard sudah bisa dipilih di generator page, dengan fallback default dari `VOICE_TYPE` atau `en-US-Standard-A`.
 - Distribution worker sudah memproses pending `distribution_jobs`.
 - Metrics worker sudah melakukan sync snapshot metrik YouTube ke Postgres.
@@ -76,17 +77,24 @@ Catatan: `done` di sini berarti produk/portal operasional lengkap. Dengan defini
 
 - platform-specific upload adapter yang benar-benar real
 - Chromium browser automation yang benar-benar menekan UI platform
-- UI checkbox platform dan account yang sudah connected.
-- Smart scheduling untuk drip feed upload.
+- Smart scheduling untuk drip feed upload (Done).
+- UI checkbox platform dan account yang sudah connected (Done).
+- Comparison view between accounts on same platform (Done).
+- Batch processing untuk metrics sync (Done).
 
 ## Recommended Next Order
 
-1. Portal operasional yang lebih matang untuk creator dan clipper.
+1. Phase 1 production usability hardening untuk creator, clipper, integrations, dan shell dashboard.
 2. Real browser automation per platform.
 3. UI checkbox platform dan account yang sudah connected.
 4. Smart scheduling untuk drip feed upload.
 5. Comparison view between accounts on same platform.
 6. Scheduled sync yang lebih cerdas per platform.
+
+## Roadmap Reference
+
+- [Future Roadmap](./future-roadmap.md)
+- Phase 1 di roadmap tersebut sekarang menjadi prioritas utama untuk hardening portal operasional.
 
 ## Related Docs
 

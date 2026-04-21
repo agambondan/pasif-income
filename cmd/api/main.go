@@ -75,7 +75,7 @@ func main() {
 		research: services.NewTrendResearchService(),
 	}
 
-	generator, err := newGeneratorServiceFromEnv()
+	generator, err := newGeneratorServiceFromEnv(repo)
 	if err != nil {
 		log.Fatalf("Generator init failed: %v", err)
 	}
@@ -115,6 +115,7 @@ func main() {
 	mux.HandleFunc("/api/platforms", api.platformsHandler)
 	mux.HandleFunc("/api/voice-types", api.voiceTypesHandler)
 	mux.HandleFunc("/api/accounts", api.accountsHandler)
+	mux.HandleFunc("/api/accounts/manual", api.manualAccountHandler)
 	mux.HandleFunc("/api/accounts/", api.accountByIDHandler)
 	mux.HandleFunc("/api/auth/", api.oauthHandler)
 	mux.HandleFunc("/api/videos", api.videosHandler)
@@ -127,7 +128,31 @@ func main() {
 	mux.HandleFunc("/api/generate", api.generateHandler)
 	mux.HandleFunc("/api/publish/history", api.publishHistoryHandler)
 	mux.HandleFunc("/api/jobs", api.jobsHandler)
-	mux.HandleFunc("/api/jobs/", api.jobByIDHandler)
+	
+	// Dynamic Routing for /api/jobs/{id}/...
+	mux.HandleFunc("/api/jobs/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
+		if id == "" {
+			api.jobsHandler(w, r)
+			return
+		}
+		
+		if strings.HasSuffix(id, "/cancel") {
+			jobID := strings.TrimSuffix(id, "/cancel")
+			if r.Method == http.MethodPost {
+				api.cancelJobHandler(w, r, jobID)
+				return
+			}
+		}
+		if strings.HasSuffix(id, "/retry") {
+			jobID := strings.TrimSuffix(id, "/retry")
+			if r.Method == http.MethodPost {
+				api.retryJobHandler(w, r, jobID)
+				return
+			}
+		}
+		api.jobByIDHandler(w, r)
+	})
 
 	handler := withCORS(mux)
 
@@ -277,6 +302,43 @@ func (a *apiServer) accountsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	a.annotateBrowserStatuses(accounts)
 	writeJSON(w, http.StatusOK, accounts)
+}
+
+func (a *apiServer) manualAccountHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		PlatformID  string `json:"platform_id"`
+		DisplayName string `json:"display_name"`
+		Email       string `json:"email"`
+		ApiKey      string `json:"api_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.PlatformID == "" || req.ApiKey == "" {
+		http.Error(w, "platform_id and api_key are required", http.StatusBadRequest)
+		return
+	}
+
+	acc, err := a.auth.LinkConnectedAccount(r.Context(), userID, req.PlatformID, req.DisplayName, req.Email, domain.AuthMethodAPI, req.ApiKey, "", time.Time{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, acc)
 }
 
 func (a *apiServer) accountByIDHandler(w http.ResponseWriter, r *http.Request) {
@@ -546,7 +608,7 @@ func (a *apiServer) launchChromiumProfile(account *domain.ConnectedAccount) {
 		return
 	}
 
-	targetURL := browserTargetURL(account.PlatformID)
+	targetURL := adapters.BrowserTargetURL(account.PlatformID)
 	if targetURL == "" {
 		log.Printf("skipping chromium launch for %s: missing target url for platform %s\n", account.ID, account.PlatformID)
 		return
@@ -573,28 +635,6 @@ func (a *apiServer) launchChromiumProfile(account *domain.ConnectedAccount) {
 
 func sanitizeAccountEmail(email string) string {
 	return strings.NewReplacer("@", "_at_", ".", "_", "+", "_plus_", "/", "_", "\\", "_").Replace(strings.ToLower(strings.TrimSpace(email)))
-}
-
-func browserTargetURL(platformID string) string {
-	switch platformID {
-	case "youtube":
-		if url := strings.TrimSpace(os.Getenv("YOUTUBE_UPLOAD_URL")); url != "" {
-			return url
-		}
-		return "https://www.youtube.com/upload"
-	case "tiktok":
-		if url := strings.TrimSpace(os.Getenv("TIKTOK_UPLOAD_URL")); url != "" {
-			return url
-		}
-		return "https://www.tiktok.com/upload?lang=en"
-	case "instagram":
-		if url := strings.TrimSpace(os.Getenv("INSTAGRAM_UPLOAD_URL")); url != "" {
-			return url
-		}
-		return "https://www.instagram.com/create/select/"
-	default:
-		return ""
-	}
 }
 
 func (a *apiServer) completeYouTubeAPIConnect(r *http.Request, userID int) (*domain.ConnectedAccount, error) {
@@ -1025,7 +1065,7 @@ func summarizeCommunityReplies(drafts []domain.CommunityReplyDraft) communitySum
 	return summary
 }
 
-func newGeneratorServiceFromEnv() (*services.GeneratorService, error) {
+func newGeneratorServiceFromEnv(repo ports.Repository) (*services.GeneratorService, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if !adapters.HasGeminiCredentials() && !adapters.HasCodexCredentials() {
 		return nil, fmt.Errorf("no Gemini or Codex credentials available")
@@ -1044,7 +1084,7 @@ func newGeneratorServiceFromEnv() (*services.GeneratorService, error) {
 	branding := services.NewBrandingService(image)
 	affiliate := services.NewAffiliateService()
 	qc := services.NewQualityControlService(apiKey)
-	return services.NewGeneratorService(writer, codexWriter, voice, image, assembler, uploader, branding, affiliate, qc), nil
+	return services.NewGeneratorService(repo, writer, codexWriter, voice, image, assembler, uploader, branding, affiliate, qc), nil
 }
 
 func newCommunityServiceFromEnv(repo ports.Repository) (*services.CommunityService, error) {
@@ -1198,13 +1238,15 @@ func (a *apiServer) generateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		job := domain.GenerationJob{
-			ID:        makeJobID(),
-			Niche:     niche,
-			Topic:     topic,
-			VideoURL:  strings.TrimSpace(req.VideoURL),
-			Status:    "queued",
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+			ID:           makeJobID(),
+			Niche:        niche,
+			Topic:        topic,
+			VideoURL:     strings.TrimSpace(req.VideoURL),
+			Status:       "queued",
+			CurrentStage: "queued",
+			ProgressPct:  0,
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
 		}
 		if a.repo == nil {
 			http.Error(w, "repository unavailable", http.StatusServiceUnavailable)
@@ -1339,6 +1381,43 @@ func (a *apiServer) updateJobStatusHandler(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, job)
 }
 
+func (a *apiServer) cancelJobHandler(w http.ResponseWriter, r *http.Request, jobID string) {
+	if a.repo == nil {
+		http.Error(w, "repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := a.repo.CancelJob(r.Context(), jobID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled", "job_id": jobID})
+}
+
+func (a *apiServer) retryJobHandler(w http.ResponseWriter, r *http.Request, jobID string) {
+	if a.repo == nil {
+		http.Error(w, "repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	job, err := a.repo.GetJob(r.Context(), jobID)
+	if err != nil {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return
+	}
+
+	// Reset status to queued
+	if err := a.repo.UpdateJobStatus(r.Context(), jobID, "queued", ""); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = a.repo.UpdateJobProgress(r.Context(), jobID, "queued", 0)
+
+	userID, _ := a.currentUserID(r)
+	// Rerun generation in background (Simplified retry for now)
+	go a.runGeneration(userID, job.ID, job.Niche, job.Topic, defaultVoiceTypeFromEnv(), nil, "immediate", 0, "")
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "retrying", "job_id": jobID})
+}
+
 func (a *apiServer) distributionsHandler(w http.ResponseWriter, r *http.Request, generationJobID string) {
 	if a.repo == nil {
 		http.Error(w, "repository unavailable", http.StatusServiceUnavailable)
@@ -1425,7 +1504,7 @@ func (a *apiServer) runGeneration(userID int, jobID, niche, topic, voiceType str
 		return
 	}
 
-	story, err := a.generator.GenerateContent(ctx, niche, topic, voiceType)
+	story, err := a.generator.GenerateContent(ctx, jobID, niche, topic, voiceType)
 	if err != nil {
 		if a.repo != nil {
 			_ = a.repo.UpdateJobStatus(ctx, jobID, "failed", err.Error())
@@ -1502,16 +1581,33 @@ func computeScheduledAt(scheduleMode string, dripIntervalDays int, startAt strin
 		dripIntervalDays = 1
 	}
 
+	var scheduled time.Time
 	switch mode {
 	case "prime_time":
-		scheduled := base.AddDate(0, 0, index)
-		return &scheduled
+		scheduled = base.AddDate(0, 0, index)
 	case "drip_feed":
-		scheduled := base.AddDate(0, 0, index*dripIntervalDays)
-		return &scheduled
+		scheduled = base.AddDate(0, 0, index*dripIntervalDays)
 	default:
 		return nil
 	}
+
+	jitterMinutes := (index * 7) % 45
+	if index%2 == 0 {
+		scheduled = scheduled.Add(time.Duration(jitterMinutes) * time.Minute)
+	} else {
+		scheduled = scheduled.Add(time.Duration(-jitterMinutes) * time.Minute)
+	}
+
+	if index > 0 {
+		scheduled = scheduled.Add(time.Duration(index*2) * time.Hour)
+	}
+
+	hour := scheduled.Hour()
+	if hour >= 1 && hour <= 6 {
+		scheduled = time.Date(scheduled.Year(), scheduled.Month(), scheduled.Day(), 8, jitterMinutes, 0, 0, loc)
+	}
+
+	return &scheduled
 }
 
 func parseScheduleTime(raw string, loc *time.Location) (time.Time, error) {
@@ -1589,9 +1685,10 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:13100")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS,DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

@@ -112,16 +112,33 @@ func (s *MetricsService) SyncUser(ctx context.Context, userID int) (int, error) 
 			continue
 		}
 
-		for _, job := range accountJobs {
-			snapshot, err := fetchYouTubeMetricSnapshot(ctx, s.repo, svc, userID, account, job)
+		// Batch YouTube API calls (limit 50 per request)
+		const batchSize = 50
+		for i := 0; i < len(accountJobs); i += batchSize {
+			end := i + batchSize
+			if end > len(accountJobs) {
+				end = len(accountJobs)
+			}
+			batch := accountJobs[i:end]
+
+			ids := make([]string, len(batch))
+			for j, job := range batch {
+				ids[j] = job.ExternalID
+			}
+
+			log.Printf("Syncing metrics batch for account %s (%d videos)\n", account.ID, len(ids))
+			snapshots, err := fetchYouTubeMetricSnapshotsBatch(ctx, s.repo, svc, userID, account, batch, ids)
 			if err != nil {
-				log.Printf("metrics fetch failed for job %s: %v\n", job.GenerationJobID, err)
+				log.Printf("metrics fetch failed for batch on account %s: %v\n", account.ID, err)
 				continue
 			}
-			if err := s.repo.SaveVideoMetricSnapshot(ctx, snapshot); err != nil {
-				return synced, err
+
+			for _, snapshot := range snapshots {
+				if err := s.repo.SaveVideoMetricSnapshot(ctx, snapshot); err != nil {
+					return synced, err
+				}
+				synced++
 			}
-			synced++
 		}
 	}
 
@@ -153,49 +170,65 @@ func youtubeMetricsServiceForAccount(ctx context.Context, account domain.Connect
 	return yt.NewService(ctx, option.WithTokenSource(tokenSource))
 }
 
-func fetchYouTubeMetricSnapshot(ctx context.Context, repo ports.Repository, svc *yt.Service, userID int, account domain.ConnectedAccount, job domain.DistributionJob) (*domain.VideoMetricSnapshot, error) {
-	generationJob, err := repo.GetJob(ctx, job.GenerationJobID)
-	if err != nil {
-		return nil, err
-	}
-
-	call := svc.Videos.List([]string{"snippet", "statistics"}).Id(job.ExternalID)
+func fetchYouTubeMetricSnapshotsBatch(ctx context.Context, repo ports.Repository, svc *yt.Service, userID int, account domain.ConnectedAccount, jobs []domain.DistributionJob, ids []string) ([]*domain.VideoMetricSnapshot, error) {
+	call := svc.Videos.List([]string{"snippet", "statistics"}).Id(strings.Join(ids, ","))
 	res, err := call.Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
-	if len(res.Items) == 0 {
-		return nil, fmt.Errorf("video %s not found", job.ExternalID)
+
+	// Map results by ID for easy lookup
+	metricsMap := make(map[string]*yt.Video)
+	for _, item := range res.Items {
+		metricsMap[item.Id] = item
 	}
 
-	video := res.Items[0]
-	stats := video.Statistics
-	if stats == nil {
-		return nil, fmt.Errorf("video %s has no statistics", job.ExternalID)
+	snapshots := []*domain.VideoMetricSnapshot{}
+	for _, job := range jobs {
+		video, ok := metricsMap[job.ExternalID]
+		if !ok {
+			log.Printf("Warning: video %s not found in YouTube API response", job.ExternalID)
+			continue
+		}
+
+		stats := video.Statistics
+		if stats == nil {
+			continue
+		}
+
+		generationJob, _ := repo.GetJob(ctx, job.GenerationJobID)
+		title := ""
+		if video.Snippet != nil {
+			title = strings.TrimSpace(video.Snippet.Title)
+		}
+		if title == "" && generationJob != nil {
+			title = strings.TrimSpace(generationJob.Title)
+		}
+
+		snapshots = append(snapshots, &domain.VideoMetricSnapshot{
+			UserID:            userID,
+			GenerationJobID:   job.GenerationJobID,
+			DistributionJobID: job.ID,
+			AccountID:         account.ID,
+			Platform:          job.Platform,
+			Niche:             getNicheFromJob(generationJob),
+			ExternalID:        job.ExternalID,
+			VideoTitle:        title,
+			ViewCount:         stats.ViewCount,
+			LikeCount:         stats.LikeCount,
+			CommentCount:      stats.CommentCount,
+			CollectedAt:       time.Now().UTC(),
+		})
 	}
 
-	title := ""
-	if video.Snippet != nil {
-		title = strings.TrimSpace(video.Snippet.Title)
-	}
-	if title == "" {
-		title = strings.TrimSpace(generationJob.Title)
-	}
+	return snapshots, nil
+}
 
-	return &domain.VideoMetricSnapshot{
-		UserID:            userID,
-		GenerationJobID:   job.GenerationJobID,
-		DistributionJobID: job.ID,
-		AccountID:         account.ID,
-		Platform:          job.Platform,
-		Niche:             strings.TrimSpace(generationJob.Niche),
-		ExternalID:        job.ExternalID,
-		VideoTitle:        title,
-		ViewCount:         stats.ViewCount,
-		LikeCount:         stats.LikeCount,
-		CommentCount:      stats.CommentCount,
-		CollectedAt:       time.Now().UTC(),
-	}, nil
+func getNicheFromJob(job *domain.GenerationJob) string {
+	if job == nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(job.Niche)
 }
 
 func metricsSyncIntervalFromEnv() time.Duration {

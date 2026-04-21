@@ -64,8 +64,105 @@ func (m *fakeUploader) Upload(ctx context.Context, filePath string, title string
 	return m.err
 }
 
+type fakeRepository struct{}
+
+func (r *fakeRepository) SaveClip(ctx context.Context, clip *domain.ClipSegment, sourceID string, s3Path string) error {
+	return nil
+}
+func (r *fakeRepository) UpdateStatus(ctx context.Context, clipID string, status string) error {
+	return nil
+}
+func (r *fakeRepository) ListClips(ctx context.Context) ([]domain.Clip, error) {
+	return nil, nil
+}
+func (r *fakeRepository) CreateJob(ctx context.Context, job *domain.GenerationJob) error {
+	return nil
+}
+func (r *fakeRepository) UpdateJobArtifact(ctx context.Context, jobID string, title string, description string, pinComment string, videoPath string) error {
+	return nil
+}
+func (r *fakeRepository) UpdateJobProgress(ctx context.Context, jobID string, stage string, progress int) error {
+	return nil
+}
+func (r *fakeRepository) UpdateJobStatus(ctx context.Context, jobID string, status string, errMsg string) error {
+	return nil
+}
+func (r *fakeRepository) GetJob(ctx context.Context, jobID string) (*domain.GenerationJob, error) {
+	return nil, nil
+}
+func (r *fakeRepository) ListJobs(ctx context.Context) ([]domain.GenerationJob, error) {
+	return nil, nil
+}
+func (r *fakeRepository) CreateDistributionJob(ctx context.Context, job *domain.DistributionJob) error {
+	return nil
+}
+func (r *fakeRepository) ListPendingDistributionJobs(ctx context.Context) ([]domain.DistributionJob, error) {
+	return nil, nil
+}
+func (r *fakeRepository) ListDistributionJobs(ctx context.Context, generationJobID string) ([]domain.DistributionJob, error) {
+	return nil, nil
+}
+func (r *fakeRepository) ListAllDistributionJobs(ctx context.Context, userID int) ([]domain.DistributionJob, error) {
+	return nil, nil
+}
+func (r *fakeRepository) UpdateDistributionJobStatus(ctx context.Context, jobID int, status string, statusDetail string, externalID string, errMsg string) error {
+	return nil
+}
+func (r *fakeRepository) CancelJob(ctx context.Context, jobID string) error {
+	return nil
+}
+func (r *fakeRepository) ListUsers(ctx context.Context) ([]domain.User, error) {
+	return nil, nil
+}
+func (r *fakeRepository) CreateUser(ctx context.Context, username, passwordHash string) error {
+	return nil
+}
+func (r *fakeRepository) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *fakeRepository) CreateSession(ctx context.Context, userID int) (string, error) {
+	return "", nil
+}
+func (r *fakeRepository) GetUserBySessionToken(ctx context.Context, sessionToken string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *fakeRepository) DeleteSession(ctx context.Context, sessionToken string) error {
+	return nil
+}
+func (r *fakeRepository) ListAllConnectedAccounts(ctx context.Context) ([]domain.ConnectedAccount, error) {
+	return nil, nil
+}
+func (r *fakeRepository) ListConnectedAccounts(ctx context.Context, userID int) ([]domain.ConnectedAccount, error) {
+	return nil, nil
+}
+func (r *fakeRepository) GetConnectedAccountByID(ctx context.Context, accountID string) (*domain.ConnectedAccount, error) {
+	return nil, nil
+}
+func (r *fakeRepository) SaveConnectedAccount(ctx context.Context, acc *domain.ConnectedAccount) error {
+	return nil
+}
+func (r *fakeRepository) DeleteConnectedAccount(ctx context.Context, accountID string) error {
+	return nil
+}
+func (r *fakeRepository) SaveVideoMetricSnapshot(ctx context.Context, snapshot *domain.VideoMetricSnapshot) error {
+	return nil
+}
+func (r *fakeRepository) ListVideoMetricSnapshots(ctx context.Context, userID int) ([]domain.VideoMetricSnapshot, error) {
+	return nil, nil
+}
+func (r *fakeRepository) ListVideoMetricSnapshotsByJob(ctx context.Context, generationJobID string) ([]domain.VideoMetricSnapshot, error) {
+	return nil, nil
+}
+func (r *fakeRepository) SaveCommunityReplyDraft(ctx context.Context, draft *domain.CommunityReplyDraft) error {
+	return nil
+}
+func (r *fakeRepository) ListCommunityReplyDrafts(ctx context.Context, userID int) ([]domain.CommunityReplyDraft, error) {
+	return nil, nil
+}
+
 func TestGenerateContent_Success(t *testing.T) {
 	s := NewGeneratorService(
+		&fakeRepository{},
 		&fakeScriptWriter{},
 		nil,
 		&fakeVoiceGenerator{},
@@ -77,7 +174,7 @@ func TestGenerateContent_Success(t *testing.T) {
 		nil,
 	)
 
-	story, err := s.GenerateContent(context.Background(), "motivation", "discipline", "en-US-Standard-A")
+	story, err := s.GenerateContent(context.Background(), "job-1", "motivation", "discipline", "en-US-Standard-A")
 	if err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
@@ -89,6 +186,7 @@ func TestGenerateContent_Success(t *testing.T) {
 func TestGenerateContent_ScriptError(t *testing.T) {
 	expectedErr := errors.New("failed to write script")
 	s := NewGeneratorService(
+		&fakeRepository{},
 		&fakeScriptWriter{err: expectedErr},
 		nil,
 		&fakeVoiceGenerator{},
@@ -100,7 +198,7 @@ func TestGenerateContent_ScriptError(t *testing.T) {
 		nil,
 	)
 
-	_, err := s.GenerateContent(context.Background(), "motivation", "discipline", "en-US-Standard-A")
+	_, err := s.GenerateContent(context.Background(), "job-1", "motivation", "discipline", "en-US-Standard-A")
 	if err == nil || err.Error() != "script writer (Gemini & Codex): failed to write script" {
 		t.Errorf("expected script writer error, got %v", err)
 	}

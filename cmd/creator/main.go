@@ -45,7 +45,7 @@ func main() {
 	}
 
 	// 2. Initialize Service
-	service := services.NewGeneratorService(writer, codexWriter, voice, image, assembler, uploader, services.NewBrandingService(image), services.NewAffiliateService(), services.NewQualityControlService(apiKey))
+	service := services.NewGeneratorService(nil, writer, codexWriter, voice, image, assembler, uploader, services.NewBrandingService(image), services.NewAffiliateService(), services.NewQualityControlService(apiKey))
 
 	// 3. Execution
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
@@ -61,7 +61,7 @@ func main() {
 	}
 
 	log.Printf("Starting generator for Niche: %s, Topic: %s\n", niche, topic)
-	story, err := service.GenerateContent(ctx, niche, topic, voiceType)
+	story, err := service.GenerateContent(ctx, "", niche, topic, voiceType)
 	if err != nil {
 		log.Fatalf("Generation failed: %v", err)
 	}

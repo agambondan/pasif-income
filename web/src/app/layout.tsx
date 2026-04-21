@@ -170,14 +170,14 @@ export default function RootLayout({
               </div>
               <div className="overflow-hidden">
                 <p className="text-sm font-bold text-white truncate">{user?.username || 'Admin'}</p>
-                <p className="text-[10px] text-emerald-500 font-medium uppercase tracking-widest">Operator</p>
+                <p className="text-[10px] text-emerald-500 font-medium uppercase tracking-widest">Session Active</p>
               </div>
             </div>
             <button 
               onClick={handleLogout}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-zinc-400 hover:text-red-400 bg-zinc-800/50 hover:bg-red-500/10 rounded-xl transition-all border border-white/5"
             >
-              Sign Out
+              End Session
             </button>
           </div>
         </aside>
@@ -194,7 +194,7 @@ export default function RootLayout({
             <div className="flex items-center gap-6">
                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-tighter">Auth Synced</span>
+                  <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-tighter">Session Synced</span>
                </div>
               <span className="text-[10px] font-mono bg-zinc-800 px-3 py-1 rounded-lg text-zinc-400 border border-white/5">WEB {buildTag}</span>
             </div>

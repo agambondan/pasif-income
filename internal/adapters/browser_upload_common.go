@@ -10,7 +10,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-func browserTargetURL(platformID string) string {
+func BrowserTargetURL(platformID string) string {
 	switch platformID {
 	case "youtube":
 		if url := strings.TrimSpace(os.Getenv("YOUTUBE_UPLOAD_URL")); url != "" {
@@ -30,6 +30,10 @@ func browserTargetURL(platformID string) string {
 	default:
 		return ""
 	}
+}
+
+func browserTargetURL(platformID string) string {
+	return BrowserTargetURL(platformID)
 }
 
 func waitAndSetUploadFile(ctx context.Context, platformID, filePath string) error {

@@ -43,16 +43,7 @@ export default function ReviewQueue() {
     };
 
     return (
-        <div className='space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pt-4 pb-10'>
-            <div className='border-l-4 border-amber-500 pl-6'>
-                <h2 className='text-4xl font-black text-white tracking-tighter uppercase font-mono'>
-                    Review Queue
-                </h2>
-                <p className='text-zinc-500 mt-2 font-medium'>
-                    Quality Control center. Approve or reject AI generated clips before distribution.
-                </p>
-            </div>
-
+        <div className='space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10'>
             {loading ? (
                 <div className='flex justify-center py-32'>
                     <div className='animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500 shadow-[0_0_20px_rgba(251,191,36,0.3)]'></div>

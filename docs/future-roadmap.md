@@ -4,6 +4,36 @@ Dokumen ini mencatat ide-ide pengembangan sistem `pasif-income` untuk fase pertu
 
 ---
 
+## 🧱 Phase 1: Production Usability
+
+Fokus pada hardening portal operasional yang sudah ada supaya benar-benar nyaman dipakai harian sebagai control center.
+
+### 1. Creator Portal Hardening
+*   **Generation UX:** Form submit, status job, error message, dan helper copy harus jelas.
+*   **Voice Preset UX:** Voice preset harus selectable dan terdokumentasi, dengan default yang eksplisit.
+*   **Job Visibility:** User harus bisa lihat job yang sedang berjalan, gagal, dan selesai tanpa interpretasi manual.
+
+### 2. Clipper Portal Hardening
+*   **Source Input Clarity:** Video URL/file path yang diterima backend harus dijelaskan secara jujur.
+*   **Destination Selection:** Target account untuk clip publish harus bisa dipilih dengan jelas.
+*   **Error Feedback:** Gagal download, transcribe, atau render harus menampilkan sebab yang mudah dibaca.
+
+### 3. Integrations UX
+*   **API vs Browser Split:** Token-based API connect dan Chromium profile connect harus dipisah tegas.
+*   **Login Once Flow:** Chromium profile harus login sekali saat setup, lalu dipakai ulang saat publish.
+*   **Status Visibility:** Status profile, needs_login, ready, dan missing harus terbaca cepat oleh operator.
+
+### 4. Dashboard Shell Consistency
+*   **Consistent Naming:** Shell, login, 404, error boundary, dan page copy harus pakai istilah yang sama.
+*   **Real Links:** Footer, header, dan navigation tidak boleh menyamarkan placeholder sebagai fitur.
+*   **Empty States:** Halaman kosong harus menjelaskan next action yang benar.
+
+### 5. Acceptance Criteria Phase 1
+*   Operator bisa login sekali lalu navigasi seluruh dashboard tanpa bingung.
+*   Creator dan clipper tidak lagi terasa seperti prototype kosong.
+*   Integrations menjelaskan perbedaan API auth dan browser profile secara operasional.
+*   Tidak ada placeholder UI yang menyamar sebagai action utama.
+
 ## 🏗️ Phase 2: System Excellence (Sedang Dikerjakan oleh Agent Lain)
 
 Fokus pada penguatan infrastruktur dasar dan kualitas output otomatis.
