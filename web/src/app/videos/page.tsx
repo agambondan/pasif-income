@@ -121,6 +121,20 @@ type TrendSeries = {
   color: string;
 };
 
+type AccountComparisonRow = {
+  key: string;
+  accountId: string;
+  platform: string;
+  trackedVideos: number;
+  totalViews: number;
+  totalLikes: number;
+  totalComments: number;
+  totalImpact: number;
+  relativeReach: number;
+  latestCollectedAt?: string | null;
+  color: string;
+};
+
 function colorForIndex(index: number) {
   const colors = ['#10b981', '#3b82f6', '#f59e0b', '#f97316', '#8b5cf6'];
   return colors[index % colors.length];
@@ -161,6 +175,50 @@ function buildTrendSeries(items: VideoMetricSnapshot[], keyFn: (item: VideoMetri
   });
 
   return series.sort((a, b) => b.total - a.total);
+}
+
+function buildAccountComparisonRows(items: VideoMetricSnapshot[]) {
+  const grouped = new Map<string, AccountComparisonRow>();
+
+  for (const item of items) {
+    const accountId = (item.account_id || 'unknown').trim() || 'unknown';
+    const platform = (item.platform || 'unknown').trim() || 'unknown';
+    const key = `${platform}::${accountId}`;
+    const current =
+      grouped.get(key) || {
+        key,
+        accountId,
+        platform,
+        trackedVideos: 0,
+        totalViews: 0,
+        totalLikes: 0,
+        totalComments: 0,
+        totalImpact: 0,
+        relativeReach: 0,
+        latestCollectedAt: null,
+        color: '#10b981',
+      };
+
+    current.trackedVideos += 1;
+    current.totalViews += item.view_count;
+    current.totalLikes += item.like_count;
+    current.totalComments += item.comment_count;
+    current.totalImpact += item.view_count + item.like_count + item.comment_count;
+    if (!current.latestCollectedAt || new Date(item.collected_at).getTime() > new Date(current.latestCollectedAt).getTime()) {
+      current.latestCollectedAt = item.collected_at;
+    }
+
+    grouped.set(key, current);
+  }
+
+  const rows = Array.from(grouped.values()).sort((a, b) => b.totalImpact - a.totalImpact);
+  const totalViews = rows.reduce((sum, row) => sum + row.totalViews, 0) || 1;
+
+  return rows.map((row, index) => ({
+    ...row,
+    relativeReach: row.totalViews / totalViews,
+    color: colorForIndex(index),
+  }));
 }
 
 function Sparkline({ points, color }: { points: TrendPoint[]; color: string }) {
@@ -222,6 +280,8 @@ export default function VideoLibrary() {
   const accountTrendSeries = useMemo(() => {
     return buildTrendSeries(metricsHistory, (item) => item.account_id || 'unknown').slice(0, 3);
   }, [metricsHistory]);
+
+  const accountComparisonRows = buildAccountComparisonRows(metricsLatest).slice(0, 10);
 
   const videoTrendSeries = useMemo(() => {
     return buildTrendSeries(metricsHistory, (item) => item.video_title || item.external_id || 'unknown').slice(0, 3);
@@ -478,7 +538,10 @@ export default function VideoLibrary() {
       </section>
 
       {/* Account Performance Leaderboard (Comparison View) */}
-      <section className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl overflow-hidden">
+      <section
+        className="rounded-[2.5rem] border border-white/5 bg-card p-8 shadow-2xl overflow-hidden"
+        data-testid="account-comparison"
+      >
         <div className="flex items-center justify-between gap-4 mb-8">
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Leaderboard</p>
@@ -500,34 +563,58 @@ export default function VideoLibrary() {
               </tr>
             </thead>
             <tbody>
-              {accountTrendSeries.length > 0 ? (
-                accountTrendSeries.map((series) => {
-                  const sample = metricsHistory.find(m => m.account_id === series.label);
-                  const platform = sample?.platform || 'unknown';
+              {accountComparisonRows.length > 0 ? (
+                accountComparisonRows.map((row) => {
                   return (
-                    <tr key={series.label} className="group/row bg-black/40 hover:bg-black/60 transition-all duration-300">
+                    <tr key={row.key} className="group/row bg-black/40 hover:bg-black/60 transition-all duration-300">
                       <td className="px-6 py-5 rounded-l-2xl border-y border-l border-white/5">
-                        <span className="text-sm font-black text-white group-hover/row:text-blue-400 transition-colors">{series.label}</span>
+                        <div className="flex items-start gap-3">
+                          <span className="mt-1 h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+                          <div>
+                            <span className="text-sm font-black text-white group-hover/row:text-blue-400 transition-colors line-clamp-1">
+                              {row.accountId}
+                            </span>
+                            <p className="mt-1 text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+                              {row.trackedVideos} tracked videos
+                            </p>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-6 py-5 border-y border-white/5">
                         <span className="text-[10px] font-bold text-zinc-500 uppercase bg-zinc-900 px-3 py-1 rounded-lg border border-white/5">
-                          {platform}
+                          {row.platform}
                         </span>
                       </td>
                       <td className="px-4 py-5 border-y border-white/5 text-center">
                         <div className="flex items-center gap-4 max-w-[200px] mx-auto">
                           <div className="flex-1 bg-zinc-900 h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-gradient-to-r from-blue-600 to-blue-400 h-full shadow-[0_0_8px_rgba(59,130,246,0.4)]" style={{ width: `${Math.min(100, (series.total / (metricsSummary?.total_views || 1)) * 100)}%` }}></div>
+                            <div
+                              className="h-full shadow-[0_0_8px_rgba(59,130,246,0.4)]"
+                              style={{
+                                width: `${Math.min(100, row.relativeReach * 100)}%`,
+                                background: `linear-gradient(90deg, ${row.color} 0%, #3b82f6 100%)`,
+                              }}
+                            />
                           </div>
                           <span className="text-[10px] font-mono font-bold text-zinc-500 w-10">
-                            {((series.total / (metricsSummary?.total_views || 1)) * 100).toFixed(1)}%
+                            {(row.relativeReach * 100).toFixed(1)}%
                           </span>
                         </div>
                       </td>
                       <td className="px-6 py-5 rounded-r-2xl border-y border-r border-white/5 text-right">
-                        <span className="text-sm font-black text-emerald-400 font-mono tracking-tighter">
-                          {formatNumber(series.total)} views
-                        </span>
+                        <div>
+                          <span className="text-sm font-black text-emerald-400 font-mono tracking-tighter">
+                            {formatNumber(row.totalImpact)} impact
+                          </span>
+                          <p className="mt-1 text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+                            {formatNumber(row.totalViews)} views · {formatNumber(row.totalLikes)} likes · {formatNumber(row.totalComments)} comments
+                          </p>
+                          {row.latestCollectedAt ? (
+                            <p className="mt-1 text-[10px] font-mono uppercase tracking-widest text-zinc-600">
+                              Updated {formatTime(row.latestCollectedAt)}
+                            </p>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );

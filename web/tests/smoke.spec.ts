@@ -32,3 +32,133 @@ test('dashboard and integrations smoke', async ({ page }) => {
   expect(platformsResponse.status).toBe(200);
   expect(platformsResponse.body).toContain('youtube');
 });
+
+test('videos page renders account comparison leaderboard', async ({ page }) => {
+  const metricsPayload = {
+    summary: {
+      total_videos: 4,
+      total_views: 250,
+      total_likes: 25,
+      total_comments: 10,
+      latest_collected_at: '2026-04-22T10:00:00.000Z',
+    },
+    latest: [
+      {
+        id: 1,
+        user_id: 1,
+        generation_job_id: 'job-a',
+        distribution_job_id: 10,
+        account_id: 'acc-youtube-a',
+        platform: 'youtube',
+        niche: 'tech',
+        external_id: 'yt-a-1',
+        video_title: 'Video A1',
+        view_count: 100,
+        like_count: 10,
+        comment_count: 4,
+        collected_at: '2026-04-22T09:45:00.000Z',
+      },
+      {
+        id: 2,
+        user_id: 1,
+        generation_job_id: 'job-b',
+        distribution_job_id: 11,
+        account_id: 'acc-youtube-a',
+        platform: 'youtube',
+        niche: 'tech',
+        external_id: 'yt-a-2',
+        video_title: 'Video A2',
+        view_count: 50,
+        like_count: 5,
+        comment_count: 2,
+        collected_at: '2026-04-22T09:50:00.000Z',
+      },
+      {
+        id: 3,
+        user_id: 1,
+        generation_job_id: 'job-c',
+        distribution_job_id: 12,
+        account_id: 'acc-youtube-b',
+        platform: 'youtube',
+        niche: 'tech',
+        external_id: 'yt-b-1',
+        video_title: 'Video B1',
+        view_count: 30,
+        like_count: 2,
+        comment_count: 1,
+        collected_at: '2026-04-22T09:55:00.000Z',
+      },
+      {
+        id: 4,
+        user_id: 1,
+        generation_job_id: 'job-d',
+        distribution_job_id: 13,
+        account_id: 'acc-tiktok-c',
+        platform: 'tiktok',
+        niche: 'tech',
+        external_id: 'tt-c-1',
+        video_title: 'Video C1',
+        view_count: 70,
+        like_count: 8,
+        comment_count: 3,
+        collected_at: '2026-04-22T09:58:00.000Z',
+      },
+    ],
+    history: [],
+    alerts: [],
+  };
+
+  await page.addInitScript((payload) => {
+    const stubbed = {
+      '/api/auth/login': {
+        id: 1,
+        username: 'admin',
+      },
+      '/api/auth/me': {
+        id: 1,
+        username: 'admin',
+      },
+      '/api/videos': ['video-a', 'video-b'],
+      '/api/publish/history': [],
+      '/api/metrics': payload,
+      '/api/community/replies': {
+        summary: {
+          total: 0,
+          drafts: 0,
+          replied: 0,
+          latest_created_at: null,
+        },
+        latest: [],
+      },
+    };
+
+    const realFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const requestUrl = typeof input === 'string' ? input : input.url;
+      const parsedUrl = new URL(requestUrl, window.location.origin);
+      const stubbedPayload = stubbed[parsedUrl.pathname as keyof typeof stubbed];
+      if (stubbedPayload !== undefined) {
+        return new Response(JSON.stringify(stubbedPayload), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+      }
+      return realFetch(input, init);
+    };
+  }, metricsPayload);
+
+  await loginAsAdmin(page);
+  await page.goto('/videos');
+  await expect(page).toHaveURL(/\/videos$/);
+  await expect(page.getByRole('heading', { name: 'Account Comparison' })).toBeVisible();
+  const comparison = page.getByTestId('account-comparison');
+  await expect(comparison.getByText('acc-youtube-a')).toBeVisible();
+  await expect(comparison.getByText('acc-youtube-b')).toBeVisible();
+  await expect(comparison.getByText('acc-tiktok-c')).toBeVisible();
+  await expect(comparison.getByText('171 impact')).toBeVisible();
+  await expect(comparison.getByText('33 impact')).toBeVisible();
+  await expect(comparison.getByText('81 impact')).toBeVisible();
+  await expect(page.getByText('Cross-account comparison pending...')).toHaveCount(0);
+});
