@@ -49,6 +49,10 @@ type Repository interface {
 	ListVideoMetricSnapshots(ctx context.Context, userID int) ([]domain.VideoMetricSnapshot, error)
 	ListVideoMetricSnapshotsByJob(ctx context.Context, generationJobID string) ([]domain.VideoMetricSnapshot, error)
 
+	// Agent Trace
+	SaveAgentEvent(ctx context.Context, event *domain.AgentEvent) error
+	ListAgentEvents(ctx context.Context, jobID string) ([]domain.AgentEvent, error)
+
 	// Community
 	SaveCommunityReplyDraft(ctx context.Context, draft *domain.CommunityReplyDraft) error
 	ListCommunityReplyDrafts(ctx context.Context, userID int) ([]domain.CommunityReplyDraft, error)

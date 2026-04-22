@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/agambondan/pasif-income/internal/core/domain"
@@ -105,8 +107,8 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 			user_id INT REFERENCES users(id),
 			platform_id TEXT NOT NULL,
 			display_name TEXT NOT NULL,
-			auth_method TEXT DEFAULT 'chromium_profile',
-			email TEXT,
+			auth_method TEXT NOT NULL DEFAULT 'chromium_profile',
+			email TEXT NOT NULL DEFAULT '',
 			profile_path TEXT,
 			access_token TEXT,
 			refresh_token TEXT,
@@ -119,10 +121,30 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 	}
 
 	_, err = db.Exec(`
-		ALTER TABLE connected_accounts ADD COLUMN IF NOT EXISTS auth_method TEXT DEFAULT 'chromium_profile';
+		ALTER TABLE connected_accounts ADD COLUMN IF NOT EXISTS auth_method TEXT NOT NULL DEFAULT 'chromium_profile';
 		ALTER TABLE connected_accounts ADD COLUMN IF NOT EXISTS email TEXT;
 		ALTER TABLE connected_accounts ADD COLUMN IF NOT EXISTS profile_path TEXT;
 		ALTER TABLE connected_accounts ADD COLUMN IF NOT EXISTS refresh_token TEXT;
+		UPDATE connected_accounts
+			SET email = LOWER(TRIM(COALESCE(email, ''))),
+			    auth_method = COALESCE(NULLIF(TRIM(auth_method), ''), 'chromium_profile');
+		ALTER TABLE connected_accounts ALTER COLUMN email SET DEFAULT '';
+		ALTER TABLE connected_accounts ALTER COLUMN email SET NOT NULL;
+		ALTER TABLE connected_accounts ALTER COLUMN auth_method SET DEFAULT 'chromium_profile';
+		ALTER TABLE connected_accounts ALTER COLUMN auth_method SET NOT NULL;
+		WITH ranked AS (
+			SELECT id,
+			       ROW_NUMBER() OVER (
+			         PARTITION BY user_id, platform_id, auth_method, email
+			         ORDER BY created_at DESC, id DESC
+			       ) AS rn
+			FROM connected_accounts
+		)
+		DELETE FROM connected_accounts ca
+		USING ranked r
+		WHERE ca.id = r.id AND r.rn > 1;
+		CREATE UNIQUE INDEX IF NOT EXISTS connected_accounts_identity_key
+			ON connected_accounts (user_id, platform_id, auth_method, email);
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter connected_accounts table: %v", err)
@@ -207,6 +229,27 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 		return nil, fmt.Errorf("failed to create community_reply_drafts table: %v", err)
 	}
 
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS agent_events (
+			id TEXT PRIMARY KEY,
+			job_id TEXT REFERENCES generation_jobs(id),
+			type TEXT NOT NULL,
+			content TEXT NOT NULL,
+			metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+			timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create agent_events table: %v", err)
+	}
+
+	_, err = db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_agent_events_job_id ON agent_events(job_id);
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create agent_events index: %v", err)
+	}
+
 	return &PostgresRepository{db}, nil
 }
 
@@ -285,7 +328,7 @@ func (r *PostgresRepository) ListAllConnectedAccounts(ctx context.Context) ([]do
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, user_id, platform_id, display_name, auth_method, COALESCE(email, ''), COALESCE(profile_path, ''), COALESCE(access_token, ''), COALESCE(refresh_token, ''), expiry, created_at
 		FROM connected_accounts
-		ORDER BY created_at DESC
+		ORDER BY created_at DESC, id DESC
 	`)
 	if err != nil {
 		return nil, err
@@ -313,6 +356,7 @@ func (r *PostgresRepository) ListConnectedAccounts(ctx context.Context, userID i
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, user_id, platform_id, display_name, auth_method, COALESCE(email, ''), COALESCE(profile_path, ''), COALESCE(access_token, ''), COALESCE(refresh_token, ''), expiry, created_at
 		FROM connected_accounts WHERE user_id = $1
+		ORDER BY created_at DESC, id DESC
 	`, userID)
 	if err != nil {
 		return nil, err
@@ -362,6 +406,8 @@ func (r *PostgresRepository) GetConnectedAccountByID(ctx context.Context, accoun
 }
 
 func (r *PostgresRepository) SaveConnectedAccount(ctx context.Context, acc *domain.ConnectedAccount) error {
+	acc.Email = strings.ToLower(strings.TrimSpace(acc.Email))
+
 	// Encrypt tokens before saving
 	encAccess, err := crypto.Encrypt(acc.AccessToken)
 	if err != nil {
@@ -375,7 +421,7 @@ func (r *PostgresRepository) SaveConnectedAccount(ctx context.Context, acc *doma
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO connected_accounts (id, user_id, platform_id, display_name, auth_method, email, profile_path, access_token, refresh_token, expiry, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT (id) DO UPDATE SET
+		ON CONFLICT (user_id, platform_id, auth_method, email) DO UPDATE SET
 			display_name = EXCLUDED.display_name,
 			access_token = EXCLUDED.access_token,
 			refresh_token = EXCLUDED.refresh_token,
@@ -534,6 +580,58 @@ func (r *PostgresRepository) SaveVideoMetricSnapshot(ctx context.Context, snapsh
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id
 	`, snapshot.UserID, snapshot.GenerationJobID, snapshot.DistributionJobID, snapshot.AccountID, snapshot.Platform, snapshot.ExternalID, snapshot.VideoTitle, int64(snapshot.ViewCount), int64(snapshot.LikeCount), int64(snapshot.CommentCount), snapshot.CollectedAt).Scan(&snapshot.ID)
+}
+
+func (r *PostgresRepository) SaveAgentEvent(ctx context.Context, event *domain.AgentEvent) error {
+	metadata := []byte(`{}`)
+	if len(event.Metadata) > 0 {
+		if data, err := json.Marshal(event.Metadata); err == nil {
+			metadata = data
+		}
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO agent_events (id, job_id, type, content, metadata, timestamp)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (id) DO UPDATE SET
+			job_id = EXCLUDED.job_id,
+			type = EXCLUDED.type,
+			content = EXCLUDED.content,
+			metadata = EXCLUDED.metadata,
+			timestamp = EXCLUDED.timestamp
+	`, event.ID, event.JobID, event.Type, event.Content, metadata, event.Timestamp)
+	return err
+}
+
+func (r *PostgresRepository) ListAgentEvents(ctx context.Context, jobID string) ([]domain.AgentEvent, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, COALESCE(job_id, ''), type, content, COALESCE(metadata, '{}'::jsonb), timestamp
+		FROM agent_events
+		WHERE job_id = $1
+		ORDER BY timestamp ASC, id ASC
+	`, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := []domain.AgentEvent{}
+	for rows.Next() {
+		var event domain.AgentEvent
+		var typeText string
+		var metadataBytes []byte
+		if err := rows.Scan(&event.ID, &event.JobID, &typeText, &event.Content, &metadataBytes, &event.Timestamp); err != nil {
+			return nil, err
+		}
+		event.Type = domain.AgentEventType(typeText)
+		if len(metadataBytes) > 0 && string(metadataBytes) != "null" {
+			_ = json.Unmarshal(metadataBytes, &event.Metadata)
+		}
+		if event.Metadata == nil {
+			event.Metadata = map[string]any{}
+		}
+		events = append(events, event)
+	}
+	return events, nil
 }
 
 func (r *PostgresRepository) SaveCommunityReplyDraft(ctx context.Context, draft *domain.CommunityReplyDraft) error {

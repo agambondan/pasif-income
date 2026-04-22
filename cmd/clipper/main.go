@@ -43,7 +43,7 @@ func main() {
 	}
 
 	// 2. Initialize Service
-	workflow := services.NewWorkflowService(downloader, transcriber, agent, editor, vision, storage, repo)
+	workflow := services.NewWorkflowService(downloader, transcriber, agent, editor, vision, storage, repo, nil)
 
 	// 3. Optional Background Pipeline Run
 	videoURL := os.Getenv("VIDEO_URL")

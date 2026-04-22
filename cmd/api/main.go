@@ -47,6 +47,7 @@ type apiServer struct {
 	alerts    *services.PerformanceAlertService
 	research  *services.TrendResearchService
 	community *services.CommunityService
+	agent     *services.AgentService
 }
 
 func main() {
@@ -73,20 +74,21 @@ func main() {
 		metrics:  services.NewMetricsService(repo),
 		alerts:   services.NewPerformanceAlertService(),
 		research: services.NewTrendResearchService(),
+		agent:    services.NewAgentService(repo),
 	}
 
-	generator, err := newGeneratorServiceFromEnv(repo)
-	if err != nil {
-		log.Fatalf("Generator init failed: %v", err)
-	}
-	api.generator = generator
-	api.workflow = newWorkflowServiceFromEnv(repo, storage)
-
-	community, err := newCommunityServiceFromEnv(repo)
+	community, err := newCommunityServiceFromEnv(repo, api.agent)
 	if err != nil {
 		log.Fatalf("Community init failed: %v", err)
 	}
 	api.community = community
+
+	generator, err := newGeneratorServiceFromEnv(repo, api.agent)
+	if err != nil {
+		log.Fatalf("Generator init failed: %v", err)
+	}
+	api.generator = generator
+	api.workflow = newWorkflowServiceFromEnv(repo, storage, api.agent)
 
 	if !adapters.HasGeminiCredentials() && !adapters.HasCodexCredentials() {
 		log.Println("CRITICAL ERROR: no Gemini or Codex credentials were found.")
@@ -128,6 +130,7 @@ func main() {
 	mux.HandleFunc("/api/generate", api.generateHandler)
 	mux.HandleFunc("/api/publish/history", api.publishHistoryHandler)
 	mux.HandleFunc("/api/jobs", api.jobsHandler)
+	mux.HandleFunc("/api/agent/events", api.agentEventsHandler)
 	
 	// Dynamic Routing for /api/jobs/{id}/...
 	mux.HandleFunc("/api/jobs/", func(w http.ResponseWriter, r *http.Request) {
@@ -1065,7 +1068,7 @@ func summarizeCommunityReplies(drafts []domain.CommunityReplyDraft) communitySum
 	return summary
 }
 
-func newGeneratorServiceFromEnv(repo ports.Repository) (*services.GeneratorService, error) {
+func newGeneratorServiceFromEnv(repo ports.Repository, agent *services.AgentService) (*services.GeneratorService, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if !adapters.HasGeminiCredentials() && !adapters.HasCodexCredentials() {
 		return nil, fmt.Errorf("no Gemini or Codex credentials available")
@@ -1084,10 +1087,10 @@ func newGeneratorServiceFromEnv(repo ports.Repository) (*services.GeneratorServi
 	branding := services.NewBrandingService(image)
 	affiliate := services.NewAffiliateService()
 	qc := services.NewQualityControlService(apiKey)
-	return services.NewGeneratorService(repo, writer, codexWriter, voice, image, assembler, uploader, branding, affiliate, qc), nil
+	return services.NewGeneratorService(repo, writer, codexWriter, voice, image, assembler, uploader, branding, affiliate, qc, agent), nil
 }
 
-func newCommunityServiceFromEnv(repo ports.Repository) (*services.CommunityService, error) {
+func newCommunityServiceFromEnv(repo ports.Repository, agent *services.AgentService) (*services.CommunityService, error) {
 	if repo == nil {
 		return nil, nil
 	}
@@ -1096,10 +1099,10 @@ func newCommunityServiceFromEnv(repo ports.Repository) (*services.CommunityServi
 		return nil, fmt.Errorf("no Gemini credentials available")
 	}
 
-	return services.NewCommunityService(repo, adapters.NewGeminiCommentResponder(apiKey)), nil
+	return services.NewCommunityService(repo, adapters.NewGeminiCommentResponder(apiKey), agent), nil
 }
 
-func newWorkflowServiceFromEnv(repo ports.Repository, storage ports.Storage) *services.WorkflowService {
+func newWorkflowServiceFromEnv(repo ports.Repository, storage ports.Storage, agent *services.AgentService) *services.WorkflowService {
 	if repo == nil || storage == nil {
 		return nil
 	}
@@ -1118,6 +1121,7 @@ func newWorkflowServiceFromEnv(repo ports.Repository, storage ports.Storage) *se
 		adapters.NewPythonVisionAgent("scripts/face_tracker.py"),
 		storage,
 		repo,
+		agent,
 	)
 }
 
@@ -1648,6 +1652,71 @@ func schedulingLocation() *time.Location {
 		return loc
 	}
 	return time.Local
+}
+
+func (a *apiServer) agentEventsHandler(w http.ResponseWriter, r *http.Request) {
+	if a.agent == nil {
+		http.Error(w, "agent service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	jobID := strings.TrimSpace(r.URL.Query().Get("job_id"))
+	if jobID == "" {
+		http.Error(w, "job_id is required", http.StatusBadRequest)
+		return
+	}
+
+	// Handle SSE streaming
+	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:13100")
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		// Send existing events first
+		events, _ := a.agent.ListEvents(r.Context(), jobID)
+		for _, event := range events {
+			data, _ := json.Marshal(event)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+		}
+		flusher.Flush()
+
+		// Subscribe to new events
+		ch, cleanup := a.agent.Subscribe(jobID)
+		defer cleanup()
+
+		for {
+			select {
+			case event, ok := <-ch:
+				if !ok {
+					return
+				}
+				data, _ := json.Marshal(event)
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+			case <-r.Context().Done():
+				return
+			case <-time.After(30 * time.Second):
+				// Keep-alive
+				fmt.Fprintf(w, ": keep-alive\n\n")
+				flusher.Flush()
+			}
+		}
+	}
+
+	// Standard JSON fetch
+	events, err := a.agent.ListEvents(r.Context(), jobID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, events)
 }
 
 func (a *apiServer) currentUserID(r *http.Request) (int, error) {

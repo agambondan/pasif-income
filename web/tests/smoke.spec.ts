@@ -162,3 +162,70 @@ test('videos page renders account comparison leaderboard', async ({ page }) => {
   await expect(comparison.getByText('81 impact')).toBeVisible();
   await expect(page.getByText('Cross-account comparison pending...')).toHaveCount(0);
 });
+
+test('agent console renders live event stream', async ({ page }) => {
+  await page.addInitScript(() => {
+    const realFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const requestUrl = typeof input === 'string' ? input : input.url;
+      const parsedUrl = new URL(requestUrl, window.location.origin);
+
+      if (parsedUrl.pathname === '/api/auth/me') {
+        return new Response(JSON.stringify({ id: 1, username: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (parsedUrl.pathname === '/api/jobs') {
+        return new Response(JSON.stringify([
+          {
+            id: 'job-1',
+            niche: 'stoicism',
+            topic: 'how to control your mind',
+            current_stage: 'running',
+            progress_pct: 42,
+          },
+        ]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return realFetch(input, init);
+    };
+
+    class MockEventSource {
+      url;
+      onmessage = null;
+      onerror = null;
+
+      constructor(url) {
+        this.url = url;
+        setTimeout(() => {
+          if (this.onmessage) {
+            this.onmessage({
+              data: JSON.stringify({
+                id: 'evt-1',
+                job_id: new URL(url, window.location.origin).searchParams.get('job_id') || 'job-1',
+                type: 'thought',
+                content: 'Inspecting the selected clip candidate.',
+                timestamp: new Date().toISOString(),
+              }),
+            });
+          }
+        }, 50);
+      }
+
+      close() {}
+    }
+
+    window.EventSource = MockEventSource;
+  });
+
+  await page.goto('/agent');
+  await expect(page).toHaveURL(/\/agent$/);
+  await expect(page.getByRole('heading', { name: 'Gemini Agent Control' })).toBeVisible();
+  await expect(page.getByRole('combobox')).toHaveValue('job-1');
+  await expect(page.getByText('Inspecting the selected clip candidate.')).toBeVisible();
+});

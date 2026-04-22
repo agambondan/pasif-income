@@ -12,17 +12,19 @@ type SessionUser = {
 function getSectionTitle(pathname: string) {
   switch (pathname) {
     case '/':
-      return 'Operations';
+      return 'Creator Portal';
     case '/research':
       return 'Trend Research Lab';
     case '/clipper':
-      return 'Podcast Clips Factory';
+      return 'Clipper Portal';
     case '/review':
       return 'Review Queue';
     case '/videos':
       return 'Asset Library';
     case '/integrations':
       return 'Integrations';
+    case '/agent':
+      return 'Agent Console';
     default:
       return pathname === '/login'
         ? 'Login'
@@ -30,6 +32,27 @@ function getSectionTitle(pathname: string) {
             .replace('/', '')
             .replace(/-/g, ' ')
             .replace(/\b\w/g, (match) => match.toUpperCase());
+  }
+}
+
+function getSectionDescription(pathname: string) {
+  switch (pathname) {
+    case '/':
+      return 'Create faceless jobs, track distribution, and watch the backend state in one place.';
+    case '/research':
+      return 'Test niche ideas and copy-ready hooks before you spend render time.';
+    case '/clipper':
+      return 'Turn long-form source videos into reviewable clip jobs with clear source guidance.';
+    case '/review':
+      return 'Approve or reject clips before they move into publish queues.';
+    case '/videos':
+      return 'Inspect stored assets, publish history, metrics, and community reply drafts.';
+    case '/integrations':
+      return 'Separate API auth from Chromium profile connect so operators know exactly what is ready.';
+    case '/agent':
+      return 'Inspect live agent traces, tool calls, and execution events for active jobs.';
+    default:
+      return 'Operations dashboard';
   }
 }
 
@@ -112,7 +135,7 @@ export default function RootLayout({
         <aside className="w-64 border-r border-white/5 flex flex-col fixed inset-y-0 bg-card/50 backdrop-blur-xl z-30">
           <div className="p-8">
             <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-br from-emerald-400 to-blue-500 tracking-tighter">
-              CLIPS FACTORY
+              PASIF INCOME
             </h1>
           </div>
           
@@ -159,6 +182,10 @@ export default function RootLayout({
                   <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/integrations' ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.6)]' : 'bg-transparent'}`}></span>
                   Integrations
                 </Link>
+                <Link href="/agent" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${pathname === '/agent' ? 'bg-indigo-500/10 text-indigo-400 font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${pathname === '/agent' ? 'bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.6)]' : 'bg-transparent'}`}></span>
+                  Agent Console
+                </Link>
               </div>
             </div>
           </nav>
@@ -186,10 +213,13 @@ export default function RootLayout({
         <main className="flex-1 ml-64 flex flex-col min-h-screen bg-background">
           {/* Section Header */}
           <header className="h-20 border-b border-white/5 flex items-center justify-between px-10 bg-background/80 backdrop-blur-md sticky top-0 z-20">
-            <div className="flex items-center gap-4">
-               <h2 className="text-lg font-bold text-white uppercase tracking-widest">
+          <div className="flex items-center gap-4">
+             <h2 className="text-lg font-bold text-white uppercase tracking-widest">
                 {getSectionTitle(pathname)}
-               </h2>
+             </h2>
+             <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-zinc-500">
+               {getSectionDescription(pathname)}
+             </p>
             </div>
             <div className="flex items-center gap-6">
                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
@@ -208,10 +238,10 @@ export default function RootLayout({
           {/* Section Footer */}
           <footer className="px-10 py-8 border-t border-white/5 bg-card/30">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-[11px] font-medium text-zinc-500 uppercase tracking-widest">
-              <p>© 2026 CLIPS FACTORY // OPERATIONS DASHBOARD</p>
+              <p>© 2026 PASIF INCOME // OPERATIONS DASHBOARD</p>
               <div className="flex gap-8">
-                <Link href="/research" className="hover:text-emerald-400 transition-colors">Research</Link>
-                <Link href="/videos" className="hover:text-emerald-400 transition-colors">Library</Link>
+                <Link href="/" className="hover:text-emerald-400 transition-colors">Creator</Link>
+                <Link href="/clipper" className="hover:text-emerald-400 transition-colors">Clipper</Link>
                 <Link href="/integrations" className="hover:text-emerald-400 transition-colors">Integrations</Link>
               </div>
             </div>

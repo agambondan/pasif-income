@@ -3,10 +3,11 @@
 import Link from 'next/link';
 
 const quickLinks = [
-  { href: '/', label: 'Operations' },
+  { href: '/', label: 'Creator Portal' },
   { href: '/research', label: 'Trend Research Lab' },
-  { href: '/clipper', label: 'Podcast Clips Factory' },
+  { href: '/clipper', label: 'Clipper Portal' },
   { href: '/videos', label: 'Asset Library' },
+  { href: '/agent', label: 'Agent Console' },
   { href: '/integrations', label: 'Integrations' },
 ];
 
@@ -52,7 +53,7 @@ export default function NotFound() {
               Suggested next step
             </p>
             <p className="text-sm text-zinc-300">
-              Go back to Operations if you want to generate content, or open Integrations if you need to connect accounts first.
+              Go back to Creator Portal if you want to generate content, or open Integrations if you need to connect accounts first.
             </p>
           </div>
         </div>

@@ -22,9 +22,10 @@ type GeneratorService struct {
 	branding    *BrandingService
 	affiliate   *AffiliateService
 	quality     *QualityControlService
+	agent       *AgentService
 }
 
-func NewGeneratorService(repo ports.Repository, w ports.ScriptWriter, cw ports.ScriptWriter, v ports.VoiceGenerator, i ports.ImageGenerator, a ports.VideoAssembler, u ports.Uploader, branding *BrandingService, affiliate *AffiliateService, qc *QualityControlService) *GeneratorService {
+func NewGeneratorService(repo ports.Repository, w ports.ScriptWriter, cw ports.ScriptWriter, v ports.VoiceGenerator, i ports.ImageGenerator, a ports.VideoAssembler, u ports.Uploader, branding *BrandingService, affiliate *AffiliateService, qc *QualityControlService, agent *AgentService) *GeneratorService {
 	return &GeneratorService{
 		repo:        repo,
 		writer:      w,
@@ -36,11 +37,13 @@ func NewGeneratorService(repo ports.Repository, w ports.ScriptWriter, cw ports.S
 		branding:    branding,
 		affiliate:   affiliate,
 		quality:     qc,
+		agent:       agent,
 	}
 }
 
 func (s *GeneratorService) GenerateContent(ctx context.Context, jobID string, niche string, topic string, voiceType string) (*domain.Story, error) {
 	log.Printf("Starting content generation for Job: %s, Niche: %s, Topic: %s\n", jobID, niche, topic)
+	s.logThought(ctx, jobID, fmt.Sprintf("Starting generation for niche %q with topic %q.", niche, topic))
 
 	attemptTopic := topic
 	maxAttempts := 1
@@ -119,13 +122,36 @@ func (s *GeneratorService) updateProgress(ctx context.Context, jobID, stage stri
 	}
 }
 
+func (s *GeneratorService) logThought(ctx context.Context, jobID, content string) {
+	if s.agent != nil {
+		s.agent.Log(ctx, jobID, domain.AgentEventThought, content, nil)
+	}
+}
+
+func (s *GeneratorService) logAction(ctx context.Context, jobID, content string, meta map[string]any) {
+	if s.agent != nil {
+		s.agent.Log(ctx, jobID, domain.AgentEventAction, content, meta)
+	}
+}
+
+func (s *GeneratorService) logResult(ctx context.Context, jobID, content string) {
+	if s.agent != nil {
+		s.agent.Log(ctx, jobID, domain.AgentEventResult, content, nil)
+	}
+}
+
 func (s *GeneratorService) generateAttempt(ctx context.Context, jobID string, niche string, topic string, voiceType string) (*domain.Story, func(), error) {
 	// 1. Write Script & Scene Plan - with Fallback
 	s.updateProgress(ctx, jobID, "writing_script", 15)
+	s.logThought(ctx, jobID, "Drafting script and scene descriptions using Gemini.")
+	s.logAction(ctx, jobID, "gemini.WriteScript", map[string]any{"niche": niche, "topic": topic})
+
 	story, err := s.writer.WriteScript(ctx, niche, topic)
 	if err != nil {
+		s.logThought(ctx, jobID, "Gemini failed to generate script. Falling back to Codex.")
 		log.Printf("Gemini failed: %v. Attempting Codex fallback...\n", err)
 		if s.codexWriter != nil {
+			s.logAction(ctx, jobID, "codex.WriteScript", map[string]any{"model": "gpt-5.4"})
 			story, err = s.codexWriter.WriteScript(ctx, niche, topic)
 		}
 
@@ -133,26 +159,33 @@ func (s *GeneratorService) generateAttempt(ctx context.Context, jobID string, ni
 			return nil, nil, fmt.Errorf("script writer (Gemini & Codex): %v", err)
 		}
 	}
+	s.logResult(ctx, jobID, fmt.Sprintf("Script ready: %q (%d scenes)", story.Title, len(story.Scenes)))
 	log.Printf("Script generated: %s\n", story.Title)
 	s.updateProgress(ctx, jobID, "writing_script", 30)
 
 	// 2. Generate Voiceover
 	s.updateProgress(ctx, jobID, "generating_audio", 45)
+	s.logThought(ctx, jobID, fmt.Sprintf("Generating voiceover using profile %q.", voiceType))
+	s.logAction(ctx, jobID, "voice.GenerateVO", map[string]any{"voice_type": voiceType})
+
 	voPath, err := s.voice.GenerateVO(ctx, story.Script, voiceType)
 	if err != nil {
 		return nil, nil, fmt.Errorf("voice generator: %v", err)
 	}
 	story.Voiceover = voPath
+	s.logResult(ctx, jobID, "Voiceover audio generated and stored.")
 	log.Printf("Voiceover generated: %s\n", voPath)
 	s.updateProgress(ctx, jobID, "generating_audio", 55)
 
 	// 3. Generate Images for each Scene
 	s.updateProgress(ctx, jobID, "generating_visuals", 65)
+	s.logThought(ctx, jobID, "Generating AI visuals for each scene using Stable Diffusion.")
 	log.Println("3. Generating images for each scene...")
 	var tempFiles []string
 	tempFiles = append(tempFiles, voPath)
 
 	for idx, scene := range story.Scenes {
+		s.logAction(ctx, jobID, "image.GenerateImage", map[string]any{"scene_idx": idx, "prompt": scene.Visual})
 		imgPath, err := s.image.GenerateImage(ctx, scene.Visual, idx)
 		if err != nil {
 			log.Printf("Warning: Image generation for scene %d failed: %v", idx, err)
@@ -161,9 +194,11 @@ func (s *GeneratorService) generateAttempt(ctx context.Context, jobID string, ni
 		story.Scenes[idx].ImagePath = imgPath
 		tempFiles = append(tempFiles, imgPath)
 	}
+	s.logResult(ctx, jobID, "All scene visuals generated.")
 	s.updateProgress(ctx, jobID, "generating_visuals", 75)
 
 	if s.branding != nil {
+		s.logThought(ctx, jobID, "Applying brand assets and overlays.")
 		brand, err := s.branding.Resolve(ctx, niche)
 		if err != nil {
 			log.Printf("Warning: branding resolve failed: %v", err)
@@ -185,11 +220,15 @@ func (s *GeneratorService) generateAttempt(ctx context.Context, jobID string, ni
 
 	// 4. Assemble Video
 	s.updateProgress(ctx, jobID, "assembling_video", 85)
+	s.logThought(ctx, jobID, "Assembling final video with FFmpeg. Compiling audio, images, and branding overlays.")
+	s.logAction(ctx, jobID, "ffmpeg.Assemble", nil)
+
 	videoPath, err := s.assembler.Assemble(ctx, story)
 	if err != nil {
 		return nil, nil, fmt.Errorf("video assembler: %v", err)
 	}
 	story.VideoOutput = videoPath
+	s.logResult(ctx, jobID, "Final video render complete.")
 	log.Printf("Final video assembled: %s\n", videoPath)
 	s.updateProgress(ctx, jobID, "assembling_video", 90)
 

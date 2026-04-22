@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/agambondan/pasif-income/internal/core/domain"
+	"sort"
 	"testing"
 )
 
@@ -64,7 +65,10 @@ func (m *fakeUploader) Upload(ctx context.Context, filePath string, title string
 	return m.err
 }
 
-type fakeRepository struct{}
+type fakeRepository struct {
+	connectedAccounts []domain.ConnectedAccount
+	agentEvents       []domain.AgentEvent
+}
 
 func (r *fakeRepository) SaveClip(ctx context.Context, clip *domain.ClipSegment, sourceID string, s3Path string) error {
 	return nil
@@ -130,15 +134,47 @@ func (r *fakeRepository) DeleteSession(ctx context.Context, sessionToken string)
 	return nil
 }
 func (r *fakeRepository) ListAllConnectedAccounts(ctx context.Context) ([]domain.ConnectedAccount, error) {
-	return nil, nil
+	return append([]domain.ConnectedAccount(nil), r.connectedAccounts...), nil
 }
 func (r *fakeRepository) ListConnectedAccounts(ctx context.Context, userID int) ([]domain.ConnectedAccount, error) {
-	return nil, nil
+	accs := make([]domain.ConnectedAccount, 0, len(r.connectedAccounts))
+	for _, acc := range r.connectedAccounts {
+		if acc.UserID == userID {
+			accs = append(accs, acc)
+		}
+	}
+	sort.SliceStable(accs, func(i, j int) bool {
+		if accs[i].CreatedAt.Equal(accs[j].CreatedAt) {
+			return accs[i].ID > accs[j].ID
+		}
+		return accs[i].CreatedAt.After(accs[j].CreatedAt)
+	})
+	return accs, nil
 }
 func (r *fakeRepository) GetConnectedAccountByID(ctx context.Context, accountID string) (*domain.ConnectedAccount, error) {
+	for _, acc := range r.connectedAccounts {
+		if acc.ID == accountID {
+			copy := acc
+			return &copy, nil
+		}
+	}
 	return nil, nil
 }
 func (r *fakeRepository) SaveConnectedAccount(ctx context.Context, acc *domain.ConnectedAccount) error {
+	for i, existing := range r.connectedAccounts {
+		if existing.ID == acc.ID {
+			r.connectedAccounts[i] = *acc
+			return nil
+		}
+		if existing.UserID == acc.UserID &&
+			existing.PlatformID == acc.PlatformID &&
+			existing.AuthMethod == acc.AuthMethod &&
+			existing.Email == acc.Email {
+			r.connectedAccounts[i] = *acc
+			return nil
+		}
+	}
+	r.connectedAccounts = append(r.connectedAccounts, *acc)
 	return nil
 }
 func (r *fakeRepository) DeleteConnectedAccount(ctx context.Context, accountID string) error {
@@ -152,6 +188,22 @@ func (r *fakeRepository) ListVideoMetricSnapshots(ctx context.Context, userID in
 }
 func (r *fakeRepository) ListVideoMetricSnapshotsByJob(ctx context.Context, generationJobID string) ([]domain.VideoMetricSnapshot, error) {
 	return nil, nil
+}
+func (r *fakeRepository) SaveAgentEvent(ctx context.Context, event *domain.AgentEvent) error {
+	if event != nil {
+		copy := *event
+		r.agentEvents = append(r.agentEvents, copy)
+	}
+	return nil
+}
+func (r *fakeRepository) ListAgentEvents(ctx context.Context, jobID string) ([]domain.AgentEvent, error) {
+	events := make([]domain.AgentEvent, 0, len(r.agentEvents))
+	for _, event := range r.agentEvents {
+		if event.JobID == jobID {
+			events = append(events, event)
+		}
+	}
+	return events, nil
 }
 func (r *fakeRepository) SaveCommunityReplyDraft(ctx context.Context, draft *domain.CommunityReplyDraft) error {
 	return nil
@@ -169,6 +221,7 @@ func TestGenerateContent_Success(t *testing.T) {
 		&fakeImageGenerator{},
 		&fakeVideoAssembler{},
 		&fakeUploader{},
+		nil,
 		nil,
 		nil,
 		nil,
@@ -193,6 +246,7 @@ func TestGenerateContent_ScriptError(t *testing.T) {
 		&fakeImageGenerator{},
 		&fakeVideoAssembler{},
 		&fakeUploader{},
+		nil,
 		nil,
 		nil,
 		nil,
