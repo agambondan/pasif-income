@@ -9,6 +9,7 @@ Dokumen ini menjelaskan pendekatan auth untuk upload otomatis ke platform sosial
 - Flow YouTube API melakukan OAuth redirect, exchange token, dan simpan access token/refresh token ke backend.
 - OAuth scope YouTube sekarang mencakup upload dan readonly supaya metrics sync bisa jalan dari token yang sama.
 - Backend publish path sekarang dipisah ke adapter YouTube API dan adapter Chromium profile, supaya boundary auth dan upload lebih jelas.
+- Browser profile root sekarang dibaca dari `BROWSER_PROFILES_DIR` dengan fallback ke `CHROMIUM_PROFILE_DIR`, supaya app, launcher, dan UI pakai volume profile yang sama.
 
 ## Prinsip
 
@@ -54,8 +55,11 @@ UI juga menyediakan `Refresh Status` untuk memaksa backend membaca ulang state f
 Host-side launcher:
 
 - request login Chromium profile ditulis ke `.runtime/browser-launch-requests`
-- script host `scripts/browser_launcher.py watch` membuka Chromium di desktop host dari file request itu
+- `docker compose up -d` atau `make up` akan ikut menyalakan service `browser-launcher`
+- service itu berjalan via `xvfb-run` di container supaya Chromium headed tetap bisa start walau display host tidak bisa di-bind
+- jika display host memang tersedia, launcher tetap bisa memakainya, tapi itu bukan lagi syarat utama untuk flow login
 - backend tidak lagi mencoba membuka browser dari container app
+- `browser_data` volume dipakai bersama oleh `app`, `clipper`, dan `browser-launcher`, sehingga profile yang dibuat backend bisa dibuka oleh launcher dan tetap persisten
 
 ## YouTube
 

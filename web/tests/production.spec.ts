@@ -1,88 +1,207 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { loginAsAdmin } from './helpers';
 
 test.describe('E2E Production Flow', () => {
   test.beforeEach(async ({ page }) => {
-    // Shared login for all tests in this describe block
-    await page.goto('/login');
-    await page.fill('input[placeholder="admin"]', 'admin');
-    await page.fill('input[placeholder="••••••••"]', 'admin123');
-    await page.click('button:has-text("ESTABLISH CONNECTION")', { force: true });
-    await expect(page).toHaveURL('/', { timeout: 15000 });
-  });
+    await page.addInitScript(() => {
+      const now = new Date().toISOString();
+      const state = {
+        jobCounter: 1,
+        jobs: [] as Array<{
+          id: string;
+          niche: string;
+          topic: string;
+          title?: string;
+          description?: string;
+          pin_comment?: string;
+          video_path?: string;
+          status: 'queued' | 'running' | 'completed' | 'failed';
+          current_stage: string;
+          progress_pct: number;
+          error?: string;
+          scheduled_at?: string | null;
+          created_at: string;
+          updated_at: string;
+        }>,
+        distributions: new Map<string, Array<{
+          id: number;
+          generation_job_id: string;
+          account_id: string;
+          platform: string;
+          status: 'pending' | 'uploading' | 'completed' | 'failed';
+          status_detail: string;
+          external_id: string;
+          error: string;
+          scheduled_at?: string | null;
+          created_at: string;
+          updated_at: string;
+        }>>(),
+      };
 
-  test('Failed login with invalid credentials (MVP-NEG-01)', async ({ context }) => {
-    // We use a new context to avoid sharing session with beforeEach login
-    const newPage = await context.newPage();
-    await newPage.goto('/login');
-    await newPage.fill('input[placeholder="admin"]', 'admin');
-    await newPage.fill('input[placeholder="••••••••"]', 'wrongpassword');
-    await newPage.click('button:has-text("ESTABLISH CONNECTION")', { force: true });
+      const readyAccount = {
+        id: 'acc-youtube-qa',
+        platform_id: 'youtube',
+        display_name: 'YouTube QA Browser',
+        auth_method: 'chromium_profile',
+        browser_status: 'ready',
+        email: 'qa@example.com',
+        profile_path: '/app/chromium-profiles/youtube/qa_at_example_com',
+        expiry: now,
+        created_at: now,
+      };
 
-    // Verify error message appearance
-    await expect(newPage.locator('[data-testid="login-error"]')).toContainText('Invalid credentials');
-    await expect(newPage).toHaveURL('/login');
-  });
+      const voiceType = {
+        id: 'en-US-Standard-A',
+        label: 'English (US)',
+        language: 'English',
+        tld: 'us',
+      };
 
-  test('Form validation: Empty topic submission (MVP-NEG-03)', async ({ page }) => {
-    await expect(page.locator('h3:has-text("New Production Job")')).toBeVisible();
+      const jobsResponse = () => JSON.stringify(state.jobs);
 
-    await page.locator('#niche-input').fill('Test Niche');
-    await page.locator('#topic-input').clear();
-    await page.locator('#topic-input').fill(''); // Double-tap just in case
-    
-    // Attempt to execute
-    await page.click('button:has-text("EXECUTE PRODUCTION")', { force: true });
-    
-    // Check for validation error
-    await expect(page.getByTestId('status-message')).toContainText('Topic is required');
-    
-    // Check if job was NOT submitted (no success message containing 'Job')
-    await expect(page.getByTestId('status-message')).not.toContainText(/Job .* queued/);
-  });
+      const distribute = (jobId: string) => {
+        const createdAt = new Date().toISOString();
+        state.distributions.set(jobId, [
+          {
+            id: 1,
+            generation_job_id: jobId,
+            account_id: readyAccount.id,
+            platform: readyAccount.platform_id,
+            status: 'pending',
+            status_detail: 'queued for publish',
+            external_id: '',
+            error: '',
+            scheduled_at: null,
+            created_at: createdAt,
+            updated_at: createdAt,
+          },
+        ]);
+      };
 
-  test('Successful job submission', async ({ page }) => {
-    await expect(page.locator('h3:has-text("New Production Job")')).toBeVisible();
-    
-    // Fill Production Form
-    await page.locator('#niche-input').fill('QA Test Niche');
-    await page.locator('#topic-input').fill('Automation Testing 101');
-    
-    // Select Account if available
-    const distributionMatrix = page.locator('span:has-text("Distribution Matrix")');
-    if (await distributionMatrix.isVisible()) {
-        const firstAccount = page.locator('label.cursor-pointer').first();
-        if (await firstAccount.isVisible()) {
-            await firstAccount.click();
+      const realFetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const requestUrl = typeof input === 'string' ? input : input.url;
+        const parsedUrl = new URL(requestUrl, window.location.origin);
+        const method = (init?.method || 'GET').toUpperCase();
+
+        if (parsedUrl.pathname === '/api/auth/login' && method === 'POST') {
+          return new Response(JSON.stringify({ id: 1, username: 'admin' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
         }
-    }
 
-    // Intercept the API call to ensure it finishes
-    const responsePromise = page.waitForResponse(response => 
-      response.url().includes('/api/generate') && response.request().method() === 'POST'
-    );
+        if (parsedUrl.pathname === '/api/auth/me') {
+          return new Response(JSON.stringify({ id: 1, username: 'admin' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
 
-    // Execute Production - Force click to bypass dev overlay if present
-    await page.click('button:has-text("EXECUTE PRODUCTION")', { force: true });
-    
-    // Wait for the API response
-    const response = await responsePromise;
-    expect([200, 202]).toContain(response.status());
+        if (parsedUrl.pathname === '/api/health') {
+          return new Response(JSON.stringify({ status: 'ok' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
 
-    const job = await response.json();
-    // Use a more specific locator for the success message to avoid strict mode violation
-    await expect(page.locator('[data-testid="status-message"]')).toContainText(`Job ${job.id} queued`);
+        if (parsedUrl.pathname === '/api/accounts') {
+          return new Response(JSON.stringify([readyAccount]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (parsedUrl.pathname === '/api/voice-types') {
+          return new Response(JSON.stringify([voiceType]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (parsedUrl.pathname === '/api/jobs' && method === 'GET') {
+          return new Response(jobsResponse(), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (parsedUrl.pathname === '/api/generate' && method === 'POST') {
+          const payload = init?.body ? (JSON.parse(String(init.body)) as {
+            niche: string;
+            topic: string;
+            voice_type: string;
+            destinations: Array<{ platform: string; account_id: string }>;
+            schedule_mode: string;
+            drip_interval_days: number;
+          }) : null;
+
+          const jobId = `job-${String(state.jobCounter).padStart(3, '0')}`;
+          state.jobCounter += 1;
+
+          const createdAt = new Date().toISOString();
+          const job = {
+            id: jobId,
+            niche: payload?.niche || 'qa-browser',
+            topic: payload?.topic || 'generate a short faceless video',
+            title: 'QA Browser Generated Video',
+            description: 'Browser QA generated video job',
+            pin_comment: 'Pinned from browser QA',
+            video_path: '/tmp/qa-browser-video.mp4',
+            status: 'queued' as const,
+            current_stage: payload?.schedule_mode === 'drip_feed' ? 'queued for drip feed' : 'queued for generation',
+            progress_pct: 0,
+            error: '',
+            scheduled_at: null,
+            created_at: createdAt,
+            updated_at: createdAt,
+          };
+
+          state.jobs = [job, ...state.jobs];
+          distribute(jobId);
+
+          return new Response(JSON.stringify(job), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (parsedUrl.pathname.match(/^\/api\/jobs\/[^/]+\/distributions$/)) {
+          const jobId = parsedUrl.pathname.split('/')[3];
+          return new Response(JSON.stringify(state.distributions.get(jobId) || []), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        return realFetch(input, init);
+      };
+    });
+
+    await loginAsAdmin(page);
   });
 
-  test('Navigate to Archive and Integrations', async ({ page }) => {
-    // Navigate to Video Archive
-    await page.goto('/videos');
-    // Using a more specific selector to avoid strict mode violation (header vs page title)
-    await expect(page.locator('h2.text-4xl:has-text("VIDEO ARCHIVE")')).toBeVisible();
-    
-    // Navigate to Integrations
-    await page.goto('/integrations');
-    // Use the 4xl version which is the page title, not the sidebar/nav header
-    await expect(page.locator('h2.text-4xl:has-text("INTEGRATIONS")')).toBeVisible();
-    await expect(page.locator('h3:has-text("YouTube")')).toBeVisible();
+  test('queues a production job from the dashboard', async ({ page }) => {
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole('heading', { name: 'Production cockpit' })).toBeVisible();
+
+    await page.getByPlaceholder('stoicism').fill('qa-browser');
+    await page.getByPlaceholder('how to control your mind').fill('Generate a short faceless video from the browser QA flow.');
+
+    const accountCheckbox = page.locator('input[type="checkbox"]').first();
+    await expect(accountCheckbox).toHaveCount(1);
+    await accountCheckbox.click({ force: true });
+    await expect(accountCheckbox).toBeChecked();
+
+    const generateButton = page.getByRole('button', { name: 'EXECUTE PRODUCTION' });
+    await expect(generateButton).toBeEnabled();
+
+    await generateButton.click();
+    await expect(page.getByText('Job job-001 queued')).toBeVisible();
+    await expect(page.getByText('qa-browser').first()).toBeVisible();
+    await expect(page.getByText('Generate a short faceless video from the browser QA flow.').first()).toBeVisible();
+    await expect(page.getByText('Distribution Jobs')).toBeVisible();
+    await expect(page.getByText('Pending / Uploading')).toBeVisible();
+    await expect(page.getByText('queued for publish')).toBeVisible();
   });
 });

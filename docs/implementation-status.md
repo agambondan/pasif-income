@@ -36,8 +36,13 @@ Catatan: `done` di sini berarti produk/portal operasional lengkap. Dengan defini
   - `creator`
 - Session-based dashboard auth sudah aktif via cookie backend.
 - Chromium profile provisioning sudah aktif per platform/email, dan connect browser profile akan membuka login session sekali saat setup awal.
+- Chromium profile root sekarang shared via `browser_data` volume dan backend membaca `BROWSER_PROFILES_DIR` terlebih dulu, supaya launcher melihat profile path yang sama.
+- Browser launcher sekarang jalan di bawah `xvfb-run` di container, jadi flow login tetap hidup walau display host tidak bisa dibind ke Docker.
+- Startup lokal menyemai satu browser QA account `YouTube QA Browser` agar dashboard punya destination `ready` untuk smoke flow tanpa setup manual.
 - Generator dan clipper sekarang memakai account picker yang dikelompokkan per platform, lengkap dengan Select All/Clear, badge auth method, dan gating browser profile yang belum `ready`.
 - Voice preset dashboard sudah bisa dipilih di generator page, dengan fallback default dari `VOICE_TYPE` atau `en-US-Standard-A`.
+- Portal creator, clipper, dan integrations sekarang punya shell copy yang lebih konsisten, job/distribution summary yang lebih jelas, serta empty state yang lebih operasional.
+- Browser automation upload sekarang memakai wait signal yang lebih spesifik per platform, dan Instagram selector sudah lebih cocok untuk flow media upload/reels.
 - Distribution worker sudah memproses pending `distribution_jobs`.
 - Metrics worker sudah melakukan sync snapshot metrik YouTube ke Postgres.
 - Dashboard analytics sudah menampilkan growth by niche, video, platform, dan akun.
@@ -56,6 +61,7 @@ Catatan: `done` di sini berarti produk/portal operasional lengkap. Dengan defini
 - Portal creator dan clipper masih perlu hardening UX/ops sebelum dianggap produk final.
 - OAuth/API connect dan browser profile connect sekarang dipisah di UI integrations.
 - Chromium profile connect membuat profile path nyata, lalu membuka login browser sekali saat setup awal.
+- Chromium profile connect sekarang memakai shared profile root yang sama antara app dan launcher, jadi path profile tidak lagi container-local.
 - UI integrations sekarang menampilkan status browser profile berdasarkan isi folder profile, supaya operator tahu mana yang masih `needs_login` dan mana yang sudah `ready`.
 - UI integrations juga punya `Refresh Status` untuk probe ulang browser profile setelah login manual.
 - Chromium profile login sekarang di-queue ke host-side launcher, bukan dibuka dari container app.

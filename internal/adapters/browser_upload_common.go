@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -72,12 +73,70 @@ func waitShort(ctx context.Context) error {
 	}
 }
 
+func waitForText(ctx context.Context, terms []string) error {
+	if len(terms) == 0 {
+		return fmt.Errorf("text terms are required")
+	}
+
+	normalized := make([]string, 0, len(terms))
+	for _, term := range terms {
+		if trimmed := strings.TrimSpace(strings.ToLower(term)); trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+	if len(normalized) == 0 {
+		return fmt.Errorf("text terms are required")
+	}
+
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		return err
+	}
+
+	expr := fmt.Sprintf(`(() => {
+		const terms = %s;
+		const text = (document.body?.innerText || document.documentElement?.innerText || '').toLowerCase();
+		return terms.some((term) => text.includes(term));
+	})()`, payload)
+
+	var matched bool
+	return chromedp.Run(ctx,
+		chromedp.Poll(expr, &matched,
+			chromedp.WithPollingInterval(500*time.Millisecond),
+			chromedp.WithPollingTimeout(browserAutomationTimeout()),
+		),
+	)
+}
+
 func setFirstValue(ctx context.Context, selectors []string, value string) error {
 	for _, selector := range selectors {
+		var present bool
+		presenceJS := fmt.Sprintf(`(() => document.querySelector(%q) !== null)()`, selector)
+		if err := chromedp.Run(ctx, chromedp.Evaluate(presenceJS, &present)); err != nil || !present {
+			continue
+		}
+
 		if err := chromedp.Run(ctx,
 			chromedp.SetValue(selector, value, chromedp.ByQuery),
 			chromedp.Blur(selector, chromedp.ByQuery),
 		); err == nil {
+			return nil
+		}
+
+		js := fmt.Sprintf(`(() => {
+			const el = document.querySelector(%q);
+			if (!el) {
+				return false;
+			}
+			el.focus?.();
+			el.value = %q;
+			el.dispatchEvent(new Event('input', { bubbles: true }));
+			el.dispatchEvent(new Event('change', { bubbles: true }));
+			el.blur?.();
+			return true;
+		})()`, selector, value)
+		var applied bool
+		if err := chromedp.Run(ctx, chromedp.Evaluate(js, &applied)); err == nil && applied {
 			return nil
 		}
 	}
@@ -88,8 +147,27 @@ func clickFirstTextMatch(ctx context.Context, terms []string) error {
 	for _, term := range terms {
 		js := fmt.Sprintf(`(() => {
 			const needle = %q;
-			const nodes = Array.from(document.querySelectorAll('button, a, tp-yt-paper-button, ytcp-button, div[role="button"], span[role="button"], input[type="button"], input[type="submit"]'));
-			const match = nodes.find((el) => ((el.innerText || el.textContent || el.value || '').trim().toLowerCase().includes(needle)));
+			const all = Array.from(document.querySelectorAll('*'));
+			const clickable = all.filter((el) => {
+				const tag = (el.tagName || '').toUpperCase();
+				return tag === 'BUTTON' ||
+					tag === 'A' ||
+					tag === 'TP-YT-PAPER-BUTTON' ||
+					tag === 'YTCP-BUTTON' ||
+					tag === 'INPUT' ||
+					el.getAttribute('role') === 'button';
+			});
+			const nodes = clickable.length > 0 ? clickable : all;
+			const match = nodes.find((el) => {
+				const candidates = [
+					el.innerText,
+					el.textContent,
+					el.value,
+					el.getAttribute('aria-label'),
+					el.getAttribute('title'),
+				].filter(Boolean).map((value) => value.trim().toLowerCase());
+				return candidates.some((value) => value.includes(needle));
+			});
 			if (match) {
 				match.click();
 				return true;
@@ -101,7 +179,25 @@ func clickFirstTextMatch(ctx context.Context, terms []string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("no matching text action found")
+
+	var visibleTexts []string
+	diagJS := `(() => {
+		const nodes = Array.from(document.querySelectorAll('*'));
+		return nodes
+			.map((el) => [
+				el.tagName,
+				el.id || '',
+				el.getAttribute('aria-label') || '',
+				el.getAttribute('title') || '',
+				(el.innerText || el.textContent || el.value || '').trim(),
+			].filter(Boolean).join(' | '))
+			.filter((value) => value.length > 0)
+			.slice(0, 30);
+	})()`
+	if err := chromedp.Run(ctx, chromedp.Evaluate(diagJS, &visibleTexts)); err != nil {
+		return fmt.Errorf("no matching text action found")
+	}
+	return fmt.Errorf("no matching text action found; visible=%v", visibleTexts)
 }
 
 func uploadActionTerms(platformID string) []string {
@@ -164,7 +260,7 @@ func uploadFileSelectors(platformID string) []string {
 	case "tiktok":
 		return append([]string{"input[accept*='video']"}, base...)
 	case "instagram":
-		return append([]string{"input[accept*='image']"}, base...)
+		return append([]string{"input[accept*='video']", "input[accept*='video/*']", "input[accept*='image']"}, base...)
 	default:
 		return base
 	}

@@ -9,22 +9,11 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o api cmd/api/main.go
 
-FROM alpine:3.23
-
-# Install Chromium and dependencies for automation
-RUN apk add --no-cache \
-    chromium \
-    python3 \
-    yt-dlp \
-    nss \
-    freetype \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    ffmpeg
+FROM python:3.14.4-slim
 
 WORKDIR /app
 COPY --from=builder /app/api .
+COPY scripts/ ./scripts/
 
 # Set environment for Playwright/Chromium
 ENV CHROME_BIN=/usr/bin/chromium-browser

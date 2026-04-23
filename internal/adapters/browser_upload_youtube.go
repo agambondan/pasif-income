@@ -6,9 +6,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
-
-	"github.com/chromedp/chromedp"
 )
 
 func automateYouTubeUpload(ctx context.Context, filePath, title, description string, progress func(string)) error {
@@ -44,7 +41,7 @@ func automateYouTubeUpload(ctx context.Context, filePath, title, description str
 		"no, it's not made for kids",
 		"no, this is not made for kids",
 	})
-	
+
 	_ = waitShort(ctx)
 
 	if progress != nil {
@@ -53,7 +50,7 @@ func automateYouTubeUpload(ctx context.Context, filePath, title, description str
 	if err := clickFirstTextMatch(ctx, []string{"Next"}); err != nil {
 		return fmt.Errorf("youtube next button (1) not found: %w", err)
 	}
-	
+
 	_ = waitShort(ctx)
 	if err := clickFirstTextMatch(ctx, []string{"Next"}); err != nil {
 		log.Printf("Warning: youtube next button (2) might have been skipped: %v\n", err)
@@ -68,33 +65,28 @@ func automateYouTubeUpload(ctx context.Context, filePath, title, description str
 	if progress != nil {
 		progress("setting_visibility")
 	}
-	
+
 	_ = waitShort(ctx)
-	
+
 	privacy := strings.ToLower(strings.TrimSpace(os.Getenv("YOUTUBE_PRIVACY_STATUS")))
 	if privacy == "" {
 		privacy = "public"
 	}
-	
+
 	log.Printf("Setting YouTube privacy to: %s\n", privacy)
 	_ = clickFirstTextMatch(ctx, []string{privacy})
 
 	if progress != nil {
 		progress("waiting_for_upload_completion")
 	}
-	
-	err := chromedp.Run(ctx, 
-		chromedp.WaitVisible(`span:has-text("Upload complete")`, chromedp.ByQuery),
-		chromedp.Sleep(2*time.Second),
-	)
-	if err != nil {
-		log.Printf("Warning: timed out waiting for 'Upload complete' text, proceeding anyway: %v\n", err)
+	if err := waitForText(ctx, []string{"upload complete", "upload finished", "processing complete"}); err != nil {
+		log.Printf("Warning: timed out waiting for upload completion text, proceeding anyway: %v\n", err)
 	}
 
 	if progress != nil {
 		progress("publishing")
 	}
-	
+
 	if err := clickFirstTextMatch(ctx, []string{"Publish", "Save", "Done"}); err != nil {
 		return fmt.Errorf("youtube final action button not found: %w", err)
 	}

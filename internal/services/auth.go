@@ -53,7 +53,7 @@ func (s *AuthService) LinkConnectedAccount(ctx context.Context, userID int, plat
 		authMethod = domain.AuthMethodChromiumProfile
 	}
 
-	email = strings.TrimSpace(email)
+	email = normalizeAccountEmail(email)
 	displayName = strings.TrimSpace(displayName)
 	platformID = strings.TrimSpace(platformID)
 	authMethod = strings.TrimSpace(authMethod)
@@ -65,6 +65,36 @@ func (s *AuthService) LinkConnectedAccount(ctx context.Context, userID int, plat
 	}
 	if displayName == "" {
 		displayName = strings.ToUpper(platformID)
+	}
+
+	if existing, err := s.findConnectedAccountByIdentity(ctx, userID, platformID, authMethod, email); err == nil && existing != nil {
+		if displayName != "" {
+			existing.DisplayName = displayName
+		}
+		existing.AuthMethod = authMethod
+		existing.Email = email
+		if accessToken != "" {
+			existing.AccessToken = accessToken
+		}
+		if refreshToken != "" {
+			existing.RefreshToken = refreshToken
+		}
+		if !expiry.IsZero() {
+			existing.Expiry = expiry
+		}
+
+		if authMethod == domain.AuthMethodChromiumProfile {
+			profilePath, err := s.ProvisionChromiumProfile(ctx, platformID, email)
+			if err != nil {
+				return nil, err
+			}
+			existing.ProfilePath = profilePath
+		}
+
+		if err := s.repo.SaveConnectedAccount(ctx, existing); err != nil {
+			return nil, err
+		}
+		return existing, nil
 	}
 
 	acc := &domain.ConnectedAccount{
@@ -104,12 +134,36 @@ func (s *AuthService) LinkConnectedAccount(ctx context.Context, userID int, plat
 	return acc, nil
 }
 
+func (s *AuthService) findConnectedAccountByIdentity(ctx context.Context, userID int, platformID, authMethod, email string) (*domain.ConnectedAccount, error) {
+	if s == nil || s.repo == nil {
+		return nil, nil
+	}
+
+	accounts, err := s.repo.ListConnectedAccounts(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range accounts {
+		acc := accounts[i]
+		if acc.PlatformID == platformID && acc.AuthMethod == authMethod && normalizeAccountEmail(acc.Email) == email {
+			copy := acc
+			return &copy, nil
+		}
+	}
+
+	return nil, nil
+}
+
 func ChromiumProfilePath(platformID, email string) string {
 	base := sanitizeForID(email)
 	if base == "" {
 		base = "unknown"
 	}
-	root := os.Getenv("CHROMIUM_PROFILE_DIR")
+	root := strings.TrimSpace(os.Getenv("BROWSER_PROFILES_DIR"))
+	if root == "" {
+		root = strings.TrimSpace(os.Getenv("CHROMIUM_PROFILE_DIR"))
+	}
 	if root == "" {
 		root = "chromium-profiles"
 	}
@@ -157,6 +211,10 @@ func sanitizeForID(value string) string {
 		":", "_",
 	)
 	return replacer.Replace(value)
+}
+
+func normalizeAccountEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
 
 func (s *AuthService) RefreshAccountToken(ctx context.Context, accountID string, userID int) (*domain.ConnectedAccount, error) {

@@ -3,9 +3,9 @@
 import Link from 'next/link';
 
 const fallbackLinks = [
-  { href: '/', label: 'Operations' },
+  { href: '/', label: 'Creator Portal' },
   { href: '/research', label: 'Trend Research Lab' },
-  { href: '/clipper', label: 'Podcast Clips Factory' },
+  { href: '/clipper', label: 'Clipper Portal' },
   { href: '/videos', label: 'Asset Library' },
   { href: '/integrations', label: 'Integrations' },
 ];
@@ -63,7 +63,7 @@ export default function GlobalError({
                   href="/"
                   className="rounded-2xl border border-white/10 bg-black/30 px-5 py-3 text-xs font-black uppercase tracking-[0.2em] text-zinc-200 transition-all hover:border-emerald-500/30 hover:text-emerald-300"
                 >
-                  Back to Operations
+                  Back to Creator Portal
                 </Link>
               </div>
 

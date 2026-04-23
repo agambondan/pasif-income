@@ -20,15 +20,35 @@ type CommunityService struct {
 	interval            time.Duration
 	maxCommentsPerVideo int
 	autoReply           bool
+	agent               *AgentService
 }
 
-func NewCommunityService(repo ports.Repository, responder ports.CommentResponder) *CommunityService {
+func NewCommunityService(repo ports.Repository, responder ports.CommentResponder, agent *AgentService) *CommunityService {
 	return &CommunityService{
 		repo:                repo,
 		responder:           responder,
 		interval:            communitySyncIntervalFromEnv(),
 		maxCommentsPerVideo: communityMaxCommentsPerVideoFromEnv(),
 		autoReply:           communityAutoReplyEnabledFromEnv(),
+		agent:               agent,
+	}
+}
+
+func (s *CommunityService) logThought(ctx context.Context, jobID, content string) {
+	if s.agent != nil {
+		s.agent.Log(ctx, jobID, domain.AgentEventThought, content, nil)
+	}
+}
+
+func (s *CommunityService) logAction(ctx context.Context, jobID, content string, meta map[string]any) {
+	if s.agent != nil {
+		s.agent.Log(ctx, jobID, domain.AgentEventAction, content, meta)
+	}
+}
+
+func (s *CommunityService) logResult(ctx context.Context, jobID, content string) {
+	if s.agent != nil {
+		s.agent.Log(ctx, jobID, domain.AgentEventResult, content, nil)
 	}
 }
 
@@ -189,6 +209,9 @@ func (s *CommunityService) syncYouTubeCommentsForJob(ctx context.Context, userID
 			continue
 		}
 
+		s.logThought(ctx, job.GenerationJobID, fmt.Sprintf("Drafting reply for comment by %s: %q", commentSnippet.AuthorDisplayName, commentText))
+		s.logAction(ctx, job.GenerationJobID, "gemini.DraftReply", map[string]any{"author": commentSnippet.AuthorDisplayName})
+
 		reply, err := s.responder.DraftReply(ctx, generationJob.Niche, generationJob.Topic, generationJob.Title, commentText, persona)
 		if err != nil {
 			log.Printf("community draft reply failed for comment %s: %v\n", comment.Id, err)
@@ -198,12 +221,15 @@ func (s *CommunityService) syncYouTubeCommentsForJob(ctx context.Context, userID
 		if reply == "" {
 			continue
 		}
+		s.logResult(ctx, job.GenerationJobID, fmt.Sprintf("Reply drafted: %q", reply))
 
 		status := "draft"
 		postedID := ""
 		var repliedAt *time.Time
 
 		if s.autoReply {
+			s.logThought(ctx, job.GenerationJobID, "Auto-reply enabled. Posting reply to YouTube.")
+			s.logAction(ctx, job.GenerationJobID, "youtube.postReply", map[string]any{"parent_id": comment.Id})
 			postedID, err = postYouTubeReply(ctx, svc, comment.Id, reply)
 			if err != nil {
 				log.Printf("community auto reply failed for comment %s: %v\n", comment.Id, err)
@@ -211,6 +237,7 @@ func (s *CommunityService) syncYouTubeCommentsForJob(ctx context.Context, userID
 				status = "replied"
 				now := time.Now().UTC()
 				repliedAt = &now
+				s.logResult(ctx, job.GenerationJobID, "Reply posted successfully.")
 			}
 		}
 

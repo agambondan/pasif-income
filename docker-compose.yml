@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   db:
     image: postgres:18.3-alpine3.22
@@ -47,6 +46,8 @@ services:
       - MINIO_BUCKET=${MINIO_BUCKET:-clips}
       - WHISPER_URL=${WHISPER_URL:-http://whisper:9000/v1/audio/transcriptions}
       - BROWSER_PROFILES_DIR=/data/browser_profiles
+      - CHROMIUM_PROFILE_DIR=/data/browser_profiles
+      - SEED_DEMO_BROWSER_PROFILE=1
       - BROWSER_LAUNCH_REQUEST_DIR=/runtime/browser-launch-requests
     volumes:
       - ${HOME}/.codex:/root/.codex
@@ -59,6 +60,30 @@ services:
       - whisper
     ports:
       - "18080:8080"
+
+  browser-launcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.browser-launcher
+    env_file: .env
+    environment:
+      - DISPLAY=
+      - XAUTHORITY=${XAUTHORITY}
+      - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
+      - BROWSER_LAUNCH_REQUEST_DIR=/runtime/browser-launch-requests
+      - BROWSER_LAUNCH_NO_SANDBOX=1
+      - BROWSER_LAUNCH_HEADLESS=0
+      - BROWSER_LAUNCH_IGNORE_CERT_ERRORS=1
+      - BROWSER_PROFILES_DIR=/data/browser_profiles
+      - CHROMIUM_PROFILE_DIR=/data/browser_profiles
+    volumes:
+      - ./.runtime/browser-launch-requests:/runtime/browser-launch-requests
+      - browser_data:/data/browser_profiles
+      - ${XDG_RUNTIME_DIR}:${XDG_RUNTIME_DIR}:rw
+      - ${XAUTHORITY}:${XAUTHORITY}:ro
+    depends_on:
+      - app
 
   clipper:
     build:
@@ -76,6 +101,7 @@ services:
       - WHISPER_URL=${WHISPER_URL:-http://whisper:9000/v1/audio/transcriptions}
       - CLIPPER_PORT=${CLIPPER_PORT:-8081}
       - BROWSER_PROFILES_DIR=/data/browser_profiles
+      - CHROMIUM_PROFILE_DIR=/data/browser_profiles
     volumes:
       - ${HOME}/.codex:/root/.codex
       - ${HOME}/.gemini:/root/.gemini:ro

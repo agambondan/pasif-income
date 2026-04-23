@@ -108,7 +108,7 @@ func (r *ChromiumRunner) AutomateUpload(ctx context.Context, profilePath, target
 		chromedp.Flag("ignore-certificate-errors", true),
 		chromedp.Flag("no-sandbox", true),
 	)
-	
+
 	if waylandEnabled() {
 		allocOpts = append(allocOpts,
 			chromedp.Flag("ozone-platform", "wayland"),
@@ -250,16 +250,34 @@ func captureAutomationArtifacts(ctx context.Context, profilePath, platformID, st
 		"error":       cause.Error(),
 		"created_at":  time.Now().UTC().Format(time.RFC3339),
 	}
+	var (
+		href       string
+		title      string
+		bodyText   string
+		html       string
+		screenshot []byte
+	)
+	_ = chromedp.Run(ctx,
+		chromedp.Evaluate(`window.location.href`, &href),
+		chromedp.Evaluate(`document.title || ''`, &title),
+		chromedp.Evaluate(`document.body ? document.body.innerText : ''`, &bodyText),
+		chromedp.Evaluate(`document.documentElement ? document.documentElement.outerHTML : ''`, &html),
+	)
+	if href != "" {
+		manifest["href"] = href
+	}
+	if title != "" {
+		manifest["title"] = title
+	}
+	if bodyText != "" {
+		manifest["body_text"] = bodyText
+	}
 	if data, err := json.MarshalIndent(manifest, "", "  "); err == nil {
 		_ = os.WriteFile(basePath+".json", data, 0o644)
 	}
-
-	var html string
-	if err := chromedp.Run(ctx, chromedp.OuterHTML("html", &html, chromedp.ByQuery)); err == nil && html != "" {
+	if html != "" {
 		_ = os.WriteFile(basePath+".html", []byte(html), 0o644)
 	}
-
-	var screenshot []byte
 	if err := chromedp.Run(ctx, chromedp.FullScreenshot(&screenshot, 90)); err == nil && len(screenshot) > 0 {
 		_ = os.WriteFile(basePath+".png", screenshot, 0o644)
 	}

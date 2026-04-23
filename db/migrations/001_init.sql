@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
     id TEXT PRIMARY KEY,
     niche TEXT NOT NULL,
     topic TEXT NOT NULL,
+    video_url TEXT DEFAULT '',
     title TEXT DEFAULT '',
     description TEXT DEFAULT '',
     pin_comment TEXT DEFAULT '',
@@ -45,13 +46,14 @@ CREATE TABLE IF NOT EXISTS connected_accounts (
     user_id INT REFERENCES users(id),
     platform_id TEXT NOT NULL,
     display_name TEXT NOT NULL,
-    auth_method TEXT DEFAULT 'chromium_profile',
-    email TEXT,
+    auth_method TEXT NOT NULL DEFAULT 'chromium_profile',
+    email TEXT NOT NULL DEFAULT '',
     profile_path TEXT,
     access_token TEXT,
     refresh_token TEXT,
     expiry TIMESTAMP,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, platform_id, auth_method, email)
 );
 
 CREATE TABLE IF NOT EXISTS distribution_jobs (

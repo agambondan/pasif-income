@@ -29,6 +29,9 @@ func automateInstagramUpload(ctx context.Context, filePath, title, description s
 	if progress != nil {
 		progress("adjusting_format")
 	}
+	if err := waitForText(ctx, []string{"crop", "next", "edit media", "reel"}); err != nil {
+		log.Printf("Warning: instagram edit controls were not detected cleanly: %v\n", err)
+	}
 	if err := clickFirstTextMatch(ctx, []string{"Next"}); err != nil {
 		return fmt.Errorf("instagram next (crop) button not found: %w", err)
 	}

@@ -4,6 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AccountSelector, {
     type ConnectedAccount,
 } from "@/components/account-selector";
+import {
+    DashboardEmptyState,
+    DashboardSurfaceHeader,
+} from "@/components/dashboard-surface";
 
 type GenerationJob = {
     id: string;
@@ -43,6 +47,8 @@ type VoiceTypeOption = {
     tld: string;
 };
 
+type ScheduleMode = "immediate" | "drip_feed" | "prime_time";
+
 const API_BASE_URL = "";
 
 const jobStatusStyles: Record<GenerationJob["status"], string> = {
@@ -69,7 +75,7 @@ export default function Dashboard() {
     const [topic, setTopic] = useState("how to control your mind");
     const [voiceType, setVoiceType] = useState("en-US-Standard-A");
     const [voiceTypes, setVoiceTypes] = useState<VoiceTypeOption[]>([]);
-    const [scheduleMode, setScheduleMode] = useState<"immediate" | "drip_feed" | "prime_time">("immediate");
+    const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("immediate");
     const [dripIntervalDays, setDripIntervalDays] = useState(1);
     const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
     const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
@@ -82,14 +88,18 @@ export default function Dashboard() {
         try {
             const res = await fetch(`${API_BASE_URL}/api/accounts`, { credentials: "include" });
             if (res.ok) setAccounts(await res.json() || []);
-        } catch (err) { console.error("Failed to fetch accounts:", err); }
+        } catch {
+            console.error("Failed to fetch accounts:");
+        }
     }, []);
 
     const fetchVoiceTypes = useCallback(async () => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/voice-types`, { credentials: "include" });
             if (res.ok) setVoiceTypes(await res.json() || []);
-        } catch (err) { console.error("Failed to fetch voice types:", err); }
+        } catch {
+            console.error("Failed to fetch voice types:");
+        }
     }, []);
 
     const fetchDistributionJobs = useCallback(async (jobId: string) => {
@@ -97,7 +107,9 @@ export default function Dashboard() {
         try {
             const res = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/distributions`, { credentials: "include" });
             if (res.ok) setDistributionJobs(await res.json() || []);
-        } catch (err) { console.error("Failed to fetch distribution jobs:", err); }
+        } catch {
+            console.error("Failed to fetch distribution jobs:");
+        }
     }, []);
 
     const fetchJobs = useCallback(async () => {
@@ -112,14 +124,18 @@ export default function Dashboard() {
                     void fetchDistributionJobs(nextJobs[0].id);
                 }
             }
-        } catch (err) { console.error("Failed to fetch jobs:", err); }
+        } catch {
+            console.error("Failed to fetch jobs:");
+        }
     }, [fetchDistributionJobs]);
 
     const fetchBackendHealth = useCallback(async () => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/health`, { credentials: "include" });
             setBackendOnline(res.ok);
-        } catch (err) { setBackendOnline(false); }
+        } catch {
+            setBackendOnline(false);
+        }
     }, []);
 
     const refreshAll = useCallback(async () => {
@@ -137,9 +153,22 @@ export default function Dashboard() {
     }, [fetchBackendHealth, fetchJobs, fetchAccounts, fetchDistributionJobs]);
 
     useEffect(() => {
-        refreshAll();
-        const interval = window.setInterval(pollState, 10000);
-        return () => window.clearInterval(interval);
+        let cancelled = false;
+        const interval = window.setInterval(() => {
+            void pollState();
+        }, 10000);
+
+        void (async () => {
+            await refreshAll();
+            if (cancelled) {
+                return;
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+        };
     }, [refreshAll, pollState]);
 
     const handleSelectJob = (jobId: string) => {
@@ -155,7 +184,9 @@ export default function Dashboard() {
                 setStatusMessage("Job cancelled successfully");
                 void fetchJobs();
             }
-        } catch (err) { console.error("Failed to cancel job:", err); }
+        } catch {
+            console.error("Failed to cancel job:");
+        }
     };
 
     const retryJob = async (id: string) => {
@@ -165,7 +196,9 @@ export default function Dashboard() {
                 setStatusMessage("Retry initiated");
                 void fetchJobs();
             }
-        } catch (err) { console.error("Failed to retry job:", err); }
+        } catch {
+            console.error("Failed to retry job:");
+        }
     };
 
     const startGeneration = async () => {
@@ -192,11 +225,23 @@ export default function Dashboard() {
                 handleSelectJob(job.id);
                 void fetchJobs();
             }
-        } catch (err) { setStatusMessage("Failed to start generation"); }
+        } catch {
+            setStatusMessage("Failed to start generation");
+        }
         finally { setIsGenerating(false); }
     };
 
     const selectedJob = jobs.find(j => j.id === selectedJobId);
+    const jobSummary = {
+        total: jobs.length,
+        queued: jobs.filter((job) => job.status === "queued").length,
+        running: jobs.filter((job) => job.status === "running").length,
+        completed: jobs.filter((job) => job.status === "completed").length,
+        failed: jobs.filter((job) => job.status === "failed").length,
+    };
+    const selectedDistributionCount = distributionJobs.length;
+    const selectedFailedDistributions = distributionJobs.filter((job) => job.status === "failed").length;
+    const selectedPendingDistributions = distributionJobs.filter((job) => job.status === "pending" || job.status === "uploading").length;
 
     if (loading) {
         return (
@@ -208,18 +253,46 @@ export default function Dashboard() {
 
     return (
         <div className='space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10'>
-            <div className='flex flex-col md:flex-row justify-between items-end gap-6 border-l-4 border-blue-500 pl-6'>
-                <div>
-                    <h2 className='text-4xl font-black text-white tracking-tighter uppercase'>Operations</h2>
-                    <p className='text-zinc-500 mt-2 font-medium'>Control the AI production pipeline and monitor live jobs.</p>
+            <DashboardSurfaceHeader
+                eyebrow="Creator Portal"
+                title="Production cockpit"
+                description="Create jobs, inspect the queue, and verify distribution state without leaving the dashboard."
+                actions={
+                    <>
+                        <div className="px-5 py-3 rounded-2xl border border-white/5 bg-black/30 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                            Last sync {lastUpdated}
+                        </div>
+                        <button
+                            onClick={refreshAll}
+                            className='bg-zinc-900 hover:bg-zinc-800 px-6 py-3 rounded-2xl border border-white/5 text-xs font-bold transition-all active:scale-95 shadow-xl'
+                        >
+                            REFRESH DATA
+                        </button>
+                        <div className={`px-6 py-3 rounded-2xl border text-xs font-black tracking-widest ${backendOnline ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-red-500/10 border-red-500/20 text-red-400"}`}>
+                            {backendOnline ? "● BACKEND ONLINE" : "● BACKEND OFFLINE"}
+                        </div>
+                    </>
+                }
+            />
+
+            <section className='grid gap-4 md:grid-cols-4'>
+                <div className='rounded-3xl border border-white/5 bg-card p-6 shadow-xl'>
+                    <p className='text-[10px] font-black uppercase tracking-widest text-zinc-500'>Tracked Jobs</p>
+                    <p className='mt-2 text-3xl font-black text-white'>{jobSummary.total}</p>
                 </div>
-                <div className='flex gap-4'>
-                    <button onClick={refreshAll} className='bg-zinc-900 hover:bg-zinc-800 px-6 py-3 rounded-2xl border border-white/5 text-xs font-bold transition-all active:scale-95 shadow-xl'>REFRESH DATA</button>
-                    <div className={`px-6 py-3 rounded-2xl border text-xs font-black tracking-widest ${backendOnline ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-red-500/10 border-red-500/20 text-red-400"}`}>
-                        {backendOnline ? "● BACKEND ONLINE" : "● BACKEND OFFLINE"}
-                    </div>
+                <div className='rounded-3xl border border-white/5 bg-card p-6 shadow-xl'>
+                    <p className='text-[10px] font-black uppercase tracking-widest text-zinc-500'>Queued</p>
+                    <p className='mt-2 text-3xl font-black text-amber-400'>{jobSummary.queued}</p>
                 </div>
-            </div>
+                <div className='rounded-3xl border border-white/5 bg-card p-6 shadow-xl'>
+                    <p className='text-[10px] font-black uppercase tracking-widest text-zinc-500'>Running</p>
+                    <p className='mt-2 text-3xl font-black text-blue-400'>{jobSummary.running}</p>
+                </div>
+                <div className='rounded-3xl border border-white/5 bg-card p-6 shadow-xl'>
+                    <p className='text-[10px] font-black uppercase tracking-widest text-zinc-500'>Completed</p>
+                    <p className='mt-2 text-3xl font-black text-emerald-400'>{jobSummary.completed}</p>
+                </div>
+            </section>
 
             <section className='grid gap-8 xl:grid-cols-[1.2fr_0.8fr]'>
                 <div className='bg-card border border-white/5 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden group h-fit'>
@@ -247,14 +320,28 @@ export default function Dashboard() {
                                 <select value={voiceType} onChange={(e) => setVoiceType(e.target.value)} className='w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-4 text-white font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'>
                                     {voiceTypes.map((v) => <option key={v.id} value={v.id}>{v.label} · {v.id}</option>)}
                                 </select>
+                                <p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1'>Default fallback is `VOICE_TYPE` or `en-US-Standard-A`.</p>
                             </div>
                             <div className='space-y-2'>
                                 <label className='text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1'>Scheduling Mode</label>
-                                <select value={scheduleMode} onChange={(e) => setScheduleMode(e.target.value as any)} className='w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-4 text-white font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'>
+                                <select value={scheduleMode} onChange={(e) => setScheduleMode(e.target.value as ScheduleMode)} className='w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-4 text-white font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'>
                                     <option value='immediate'>Immediate</option>
                                     <option value='drip_feed'>Drip Feed</option>
                                     <option value='prime_time'>Prime Time</option>
                                 </select>
+                                <p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1'>Scheduling is queue metadata. Browser automation stays configured in Integrations.</p>
+                                {scheduleMode === "drip_feed" && (
+                                    <div className="mt-2 space-y-2">
+                                        <label className='text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1'>Drip Interval Days</label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={dripIntervalDays}
+                                            onChange={(e) => setDripIntervalDays(Number(e.target.value) || 1)}
+                                            className='w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-4 text-white font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'
+                                        />
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -273,7 +360,7 @@ export default function Dashboard() {
                             {isGenerating ? "INITIALIZING..." : "EXECUTE PRODUCTION"}
                         </button>
 
-                        {statusMessage && <div className='mt-6 rounded-2xl border border-blue-500/20 bg-blue-500/10 px-6 py-4 text-xs font-bold text-blue-400 text-center animate-bounce'>{statusMessage}</div>}
+                        {statusMessage && <div className='mt-6 rounded-2xl border border-blue-500/20 bg-blue-500/10 px-6 py-4 text-xs font-bold text-blue-400 text-center'>{statusMessage}</div>}
                     </div>
                 </div>
 
@@ -284,29 +371,43 @@ export default function Dashboard() {
                     </div>
 
                     <div className='space-y-4 flex-1 overflow-auto max-h-[600px] pr-2'>
-                        {jobs.map((job) => (
-                            <div key={job.id} onClick={() => handleSelectJob(job.id)} className={`rounded-2xl border bg-black/40 p-5 transition-all cursor-pointer ${selectedJobId === job.id ? "border-emerald-500/40 shadow-lg shadow-emerald-500/5" : "border-white/5 hover:border-white/20"}`}>
-                                <div className='flex items-start justify-between gap-4'>
-                                    <div>
-                                        <p className='font-black text-white text-sm uppercase tracking-tight'>{job.niche}</p>
-                                        <p className='text-[10px] text-zinc-500 font-medium mt-1 uppercase tracking-widest'>{job.topic}</p>
+                        {jobs.length > 0 ? (
+                            jobs.map((job) => (
+                                <div key={job.id} onClick={() => handleSelectJob(job.id)} className={`rounded-2xl border bg-black/40 p-5 transition-all cursor-pointer ${selectedJobId === job.id ? "border-emerald-500/40 shadow-lg shadow-emerald-500/5" : "border-white/5 hover:border-white/20"}`}>
+                                    <div className='flex items-start justify-between gap-4'>
+                                        <div>
+                                            <p className='font-black text-white text-sm uppercase tracking-tight'>{job.niche}</p>
+                                            <p className='text-[10px] text-zinc-500 font-medium mt-1 uppercase tracking-widest'>{job.topic}</p>
+                                        </div>
+                                        <span className={`rounded-lg border px-2 py-1 text-[9px] font-black uppercase tracking-widest ${jobStatusStyles[job.status]}`}>{job.status}</span>
                                     </div>
-                                    <span className={`rounded-lg border px-2 py-1 text-[9px] font-black uppercase tracking-widest ${jobStatusStyles[job.status]}`}>{job.status}</span>
+
+                                    <div className='mt-4 flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-widest text-zinc-500'>
+                                        <span>{job.current_stage || "Queued for processing"}</span>
+                                        <span>{formatTime(job.updated_at)}</span>
+                                    </div>
+
+                                    {job.status === "running" && (
+                                        <div className="mt-4 space-y-2">
+                                            <div className="flex justify-between text-[8px] font-black text-blue-400 uppercase tracking-[0.2em]">
+                                                <span>{job.current_stage || "Processing"}</span>
+                                                <span>{job.progress_pct}%</span>
+                                            </div>
+                                            <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
+                                                <div className="bg-blue-500 h-full transition-all duration-500" style={{ width: `${job.progress_pct}%` }}></div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                                
-                                {job.status === "running" && (
-                                    <div className="mt-4 space-y-2">
-                                        <div className="flex justify-between text-[8px] font-black text-blue-400 uppercase tracking-[0.2em]">
-                                            <span>{job.current_stage || "Processing"}</span>
-                                            <span>{job.progress_pct}%</span>
-                                        </div>
-                                        <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
-                                            <div className="bg-blue-500 h-full transition-all duration-500" style={{ width: `${job.progress_pct}%` }}></div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                            ))
+                        ) : (
+                            <DashboardEmptyState
+                                compact
+                                icon="🪹"
+                                title="No jobs yet"
+                                description="Generate the first creator job to populate the live queue and distribution trace."
+                            />
+                        )}
                     </div>
 
                     {selectedJob && (
@@ -322,18 +423,65 @@ export default function Dashboard() {
                                     )}
                                 </div>
                             </div>
-                            
-                            <div className='space-y-3'>
-                                {distributionJobs.map((dist) => (
-                                    <div key={dist.id} className='rounded-2xl border border-white/5 bg-black/40 p-4'>
-                                        <div className='flex items-center justify-between mb-2'>
-                                            <p className='text-sm font-black text-white uppercase'>{dist.platform}</p>
-                                            <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg border ${dist.status === 'completed' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/15 text-amber-300 border-amber-500/30'}`}>{dist.status}</span>
-                                        </div>
-                                        <p className='text-[10px] text-zinc-500 font-bold uppercase tracking-widest'>{dist.status_detail || "Queued"}</p>
-                                    </div>
-                                ))}
+
+                            <div className="grid gap-3 md:grid-cols-2">
+                                <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Selected Job</p>
+                                    <p className="mt-2 text-sm font-bold text-white uppercase">{selectedJob.niche}</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{selectedJob.topic}</p>
+                                </div>
+                                <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Timing</p>
+                                    <p className="mt-2 text-sm font-bold text-white">{formatTime(selectedJob.created_at)}</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Updated {formatTime(selectedJob.updated_at)}</p>
+                                </div>
                             </div>
+
+                            <div className="grid gap-3 md:grid-cols-3">
+                                <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Distribution Jobs</p>
+                                    <p className="mt-2 text-2xl font-black text-white">{selectedDistributionCount}</p>
+                                </div>
+                                <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Pending / Uploading</p>
+                                    <p className="mt-2 text-2xl font-black text-amber-400">{selectedPendingDistributions}</p>
+                                </div>
+                                <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Failed</p>
+                                    <p className="mt-2 text-2xl font-black text-red-400">{selectedFailedDistributions}</p>
+                                </div>
+                            </div>
+
+                            {selectedJob.error && (
+                                <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-5 py-4 text-sm text-red-100">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-red-300">Failure Detail</p>
+                                    <p className="mt-2 break-words">{selectedJob.error}</p>
+                                </div>
+                            )}
+
+                            {distributionJobs.length > 0 ? (
+                                <div className='space-y-3'>
+                                    {distributionJobs.map((dist) => (
+                                        <div key={dist.id} className='rounded-2xl border border-white/5 bg-black/40 p-4'>
+                                            <div className='flex items-center justify-between mb-2 gap-3'>
+                                                <p className='text-sm font-black text-white uppercase'>{dist.platform}</p>
+                                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg border ${dist.status === 'completed' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : dist.status === 'failed' ? 'bg-red-500/15 text-red-300 border-red-500/30' : 'bg-amber-500/15 text-amber-300 border-amber-500/30'}`}>{dist.status}</span>
+                                            </div>
+                                            <p className='text-[10px] text-zinc-500 font-bold uppercase tracking-widest'>{dist.status_detail || "Queued"}</p>
+                                            {dist.error && (
+                                                <p className='mt-2 text-[10px] font-bold text-red-300 uppercase tracking-widest'>{dist.error}</p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <DashboardEmptyState
+                                    compact
+                                    icon="📤"
+                                    title="No distribution jobs"
+                                    description="Once the creator pipeline advances, each destination account will appear here with its live publish state."
+                                />
+                            )}
                         </div>
                     )}
                 </div>

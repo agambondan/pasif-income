@@ -178,9 +178,21 @@ function buildTrendSeries(items: VideoMetricSnapshot[], keyFn: (item: VideoMetri
 }
 
 function buildAccountComparisonRows(items: VideoMetricSnapshot[]) {
-  const grouped = new Map<string, AccountComparisonRow>();
+  const latestByVideo = new Map<string, VideoMetricSnapshot>();
 
   for (const item of items) {
+    const accountId = (item.account_id || 'unknown').trim() || 'unknown';
+    const platform = (item.platform || 'unknown').trim() || 'unknown';
+    const videoKey = `${platform}::${accountId}::${(item.external_id || 'unknown').trim() || 'unknown'}`;
+    const existing = latestByVideo.get(videoKey);
+    if (!existing || new Date(item.collected_at).getTime() >= new Date(existing.collected_at).getTime()) {
+      latestByVideo.set(videoKey, item);
+    }
+  }
+
+  const grouped = new Map<string, AccountComparisonRow>();
+
+  for (const item of latestByVideo.values()) {
     const accountId = (item.account_id || 'unknown').trim() || 'unknown';
     const platform = (item.platform || 'unknown').trim() || 'unknown';
     const key = `${platform}::${accountId}`;
@@ -281,7 +293,10 @@ export default function VideoLibrary() {
     return buildTrendSeries(metricsHistory, (item) => item.account_id || 'unknown').slice(0, 3);
   }, [metricsHistory]);
 
-  const accountComparisonRows = buildAccountComparisonRows(metricsLatest).slice(0, 10);
+  const accountComparisonRows = useMemo(() => {
+    const source = metricsLatest.length > 0 ? metricsLatest : metricsHistory;
+    return buildAccountComparisonRows(source).slice(0, 10);
+  }, [metricsHistory, metricsLatest]);
 
   const videoTrendSeries = useMemo(() => {
     return buildTrendSeries(metricsHistory, (item) => item.video_title || item.external_id || 'unknown').slice(0, 3);
@@ -621,8 +636,13 @@ export default function VideoLibrary() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={4} className="py-20 text-center text-zinc-600 font-bold uppercase tracking-widest text-[10px] border-2 border-dashed border-white/5 rounded-[2rem]">
-                    Cross-account comparison pending...
+                  <td colSpan={4} className="py-20 text-center border-2 border-dashed border-white/5 rounded-[2rem]">
+                    <div className="mx-auto max-w-md">
+                      <p className="text-zinc-600 text-sm font-bold uppercase tracking-widest">No comparison data yet</p>
+                      <p className="mt-2 text-zinc-500 text-sm">
+                        Sync metrics after your first publish batch to see which account and platform combination is pulling the strongest reach.
+                      </p>
+                    </div>
                   </td>
                 </tr>
               )}

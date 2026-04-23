@@ -33,6 +33,193 @@ test('dashboard and integrations smoke', async ({ page }) => {
   expect(platformsResponse.body).toContain('youtube');
 });
 
+test('integrations page shows launch feedback for chromium profiles', async ({ page }) => {
+  await page.addInitScript(() => {
+    const account = {
+      id: 'youtube-qa-browser-test',
+      platform_id: 'youtube',
+      display_name: 'YouTube QA Browser',
+      auth_method: 'chromium_profile',
+      email: 'qa-browser@local',
+      profile_path: '/data/browser_profiles/youtube/qa-browser_at_local',
+      browser_status: 'needs_login',
+      expiry: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+    let statusCalls = 0;
+    const realFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const requestUrl = typeof input === 'string' ? input : input.url;
+      const parsedUrl = new URL(requestUrl, window.location.origin);
+
+      if (parsedUrl.pathname === '/api/auth/login' && init?.method === 'POST') {
+        return new Response(JSON.stringify({ id: 1, username: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (parsedUrl.pathname === '/api/auth/me') {
+        return new Response(JSON.stringify({ id: 1, username: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (parsedUrl.pathname === '/api/platforms') {
+        return new Response(JSON.stringify([
+          { id: 'youtube', name: 'YouTube', supported_methods: ['api', 'chromium_profile'], description: 'Video platform' },
+        ]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (parsedUrl.pathname === `/api/accounts/${account.id}/launch`) {
+        return new Response(JSON.stringify({ id: account.id, status: 'queued' }), {
+          status: 202,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (parsedUrl.pathname === `/api/accounts/${account.id}/status`) {
+        statusCalls += 1;
+        const updated = {
+          ...account,
+          browser_status: statusCalls >= 2 ? 'ready' : 'needs_login',
+        };
+        Object.assign(account, updated);
+        return new Response(JSON.stringify(updated), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (parsedUrl.pathname === '/api/accounts') {
+        return new Response(JSON.stringify([account]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return realFetch(input, init);
+    };
+  });
+
+  await loginAsAdmin(page);
+
+  await page.goto('/integrations');
+  await expect(page).toHaveURL(/\/integrations$/);
+
+  const qaCard = page.getByTestId('browser-account-card').filter({ hasText: 'YouTube QA Browser' });
+  await expect(qaCard).toBeVisible();
+  await expect(qaCard.getByTestId('browser-launch-status')).toContainText('Click Open Browser');
+
+  await qaCard.getByRole('button', { name: 'Open Browser' }).click();
+
+  await expect(qaCard.getByTestId('browser-launch-status')).toContainText(/(Queued on host launcher|Launched on host|Browser profile is ready)/);
+  await expect(qaCard.getByTestId('browser-launch-status')).toContainText('Browser profile is ready');
+  await expect(page.getByText('Browser launch queued on host launcher.')).toBeVisible();
+});
+
+test('create profile auto-refreshes chromium status', async ({ page }) => {
+  await page.addInitScript(() => {
+    const browserAccounts: Array<{
+      id: string;
+      platform_id: string;
+      display_name: string;
+      auth_method: string;
+      email: string;
+      profile_path: string;
+      browser_status?: string;
+      expiry: string;
+      created_at: string;
+    }> = [];
+    let statusCalls = 0;
+    const realFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const requestUrl = typeof input === 'string' ? input : input.url;
+      const parsedUrl = new URL(requestUrl, window.location.origin);
+
+      if (parsedUrl.pathname === '/api/auth/login' && init?.method === 'POST') {
+        return new Response(JSON.stringify({ id: 1, username: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (parsedUrl.pathname === '/api/auth/me') {
+        return new Response(JSON.stringify({ id: 1, username: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (parsedUrl.pathname === '/api/platforms') {
+        return new Response(JSON.stringify([
+          { id: 'youtube', name: 'YouTube', supported_methods: ['api', 'chromium_profile'], description: 'Video platform' },
+        ]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (parsedUrl.pathname === '/api/auth/youtube' && parsedUrl.searchParams.get('method') === 'chromium_profile') {
+        const email = parsedUrl.searchParams.get('email') || 'qa-create@local';
+        browserAccounts.splice(0, browserAccounts.length, {
+          id: 'youtube-created-browser',
+          platform_id: 'youtube',
+          display_name: 'YOUTUBE Chromium Profile',
+          auth_method: 'chromium_profile',
+          email,
+          profile_path: '/data/browser_profiles/youtube/qa-create_at_local',
+          browser_status: 'needs_login',
+          expiry: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        });
+        return new Response(JSON.stringify(browserAccounts[0]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (parsedUrl.pathname === '/api/accounts/youtube-created-browser/status') {
+        statusCalls += 1;
+        browserAccounts[0] = {
+          ...browserAccounts[0],
+          browser_status: statusCalls >= 2 ? 'ready' : 'needs_login',
+        };
+        return new Response(JSON.stringify(browserAccounts[0]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (parsedUrl.pathname === '/api/accounts') {
+        return new Response(JSON.stringify(browserAccounts), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return realFetch(input, init);
+    };
+  });
+
+  await loginAsAdmin(page);
+  await page.goto('/integrations');
+  await expect(page).toHaveURL(/\/integrations$/);
+
+  await page.getByPlaceholder('account@gmail.com').fill('qa-create@local');
+  await page.getByRole('button', { name: /CREATE & OPEN PROFILE/ }).click();
+
+  const createdCard = page.getByTestId('browser-account-card').filter({ hasText: 'YOUTUBE Chromium Profile' });
+  await expect(createdCard).toBeVisible();
+  await expect(createdCard.getByTestId('browser-launch-status')).toContainText(/(Browser profile created|Launched on host|Browser profile is ready)/);
+  await expect(createdCard.getByTestId('browser-launch-status')).toContainText('Browser profile is ready');
+  await expect(page.getByText('Browser login queued for qa-create@local. Open the host launcher to open Chromium on your desktop.')).toBeVisible();
+});
+
 test('videos page renders account comparison leaderboard', async ({ page }) => {
   const metricsPayload = {
     summary: {
@@ -42,7 +229,8 @@ test('videos page renders account comparison leaderboard', async ({ page }) => {
       total_comments: 10,
       latest_collected_at: '2026-04-22T10:00:00.000Z',
     },
-    latest: [
+    latest: [],
+    history: [
       {
         id: 1,
         user_id: 1,
@@ -104,7 +292,6 @@ test('videos page renders account comparison leaderboard', async ({ page }) => {
         collected_at: '2026-04-22T09:58:00.000Z',
       },
     ],
-    history: [],
     alerts: [],
   };
 
@@ -160,7 +347,7 @@ test('videos page renders account comparison leaderboard', async ({ page }) => {
   await expect(comparison.getByText('171 impact')).toBeVisible();
   await expect(comparison.getByText('33 impact')).toBeVisible();
   await expect(comparison.getByText('81 impact')).toBeVisible();
-  await expect(page.getByText('Cross-account comparison pending...')).toHaveCount(0);
+  await expect(page.getByText('No comparison data yet')).toHaveCount(0);
 });
 
 test('agent console renders live event stream', async ({ page }) => {

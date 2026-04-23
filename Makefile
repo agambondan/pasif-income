@@ -1,4 +1,4 @@
-.PHONY: build run test clean up down restart ps logs api creator clipper web
+.PHONY: build run test clean up down restart ps logs api creator clipper web browser-launcher
 
 COMPOSE ?= docker compose
 WEB_PORT ?= 13100
@@ -17,13 +17,13 @@ clean:
 	rm -rf bin/
 
 up:
-	$(COMPOSE) up -d --build db minio whisper redis app clipper web
+	$(COMPOSE) up -d --build db minio whisper redis app browser-launcher clipper web
 
 down:
 	$(COMPOSE) down
 
 restart:
-	$(COMPOSE) up -d --build --force-recreate db minio whisper redis app clipper web
+	$(COMPOSE) up -d --build --force-recreate db minio whisper redis app browser-launcher clipper web
 
 ps:
 	$(COMPOSE) ps
@@ -42,3 +42,6 @@ clipper:
 
 web:
 	$(COMPOSE) up -d --build web
+
+browser-launcher:
+	python3 scripts/browser_launcher.py watch --dir .runtime/browser-launch-requests

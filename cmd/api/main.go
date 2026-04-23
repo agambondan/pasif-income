@@ -97,7 +97,14 @@ func main() {
 
 	// Create default user for testing
 	if repo != nil {
-		_ = api.auth.Register(context.Background(), "admin", "admin123")
+		if _, err := repo.GetUserByUsername(context.Background(), "admin"); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				_ = api.auth.Register(context.Background(), "admin", "admin123")
+			}
+		}
+		if err := seedDemoChromiumProfileAccount(context.Background(), api); err != nil {
+			log.Printf("Browser profile seed warning: %v\n", err)
+		}
 	}
 
 	if repo != nil {
@@ -198,6 +205,72 @@ func defaultVoiceTypeFromEnv() string {
 		return voiceType
 	}
 	return "en-US-Standard-A"
+}
+
+func seedDemoChromiumProfileAccount(ctx context.Context, api *apiServer) error {
+	if api == nil || api.auth == nil || api.repo == nil {
+		return nil
+	}
+	if !envEnabled("SEED_DEMO_BROWSER_PROFILE") {
+		return nil
+	}
+
+	adminUser, err := api.repo.GetUserByUsername(ctx, "admin")
+	if err != nil {
+		return err
+	}
+
+	account, err := api.auth.LinkConnectedAccount(
+		ctx,
+		adminUser.ID,
+		"youtube",
+		"YouTube QA Browser",
+		"qa-browser@local",
+		domain.AuthMethodChromiumProfile,
+		"",
+		"",
+		time.Time{},
+	)
+	if err != nil {
+		return err
+	}
+	if err := ensureReadyBrowserProfile(account.ProfilePath); err != nil {
+		return err
+	}
+	log.Printf("Seeded local browser profile account %s at %s\n", account.ID, account.ProfilePath)
+	return nil
+}
+
+func ensureReadyBrowserProfile(profilePath string) error {
+	profilePath = strings.TrimSpace(profilePath)
+	if profilePath == "" {
+		return errors.New("profile path is empty")
+	}
+
+	defaultDir := filepath.Join(profilePath, "Default")
+	if err := os.MkdirAll(defaultDir, 0o755); err != nil {
+		return err
+	}
+	files := map[string]string{
+		filepath.Join(defaultDir, "Cookies"):     "seeded-cookie",
+		filepath.Join(defaultDir, "Login Data"):  "seeded-login-data",
+		filepath.Join(defaultDir, "Preferences"): "{}",
+	}
+	for path, content := range files {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func envEnabled(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *apiServer) loginHandler(w http.ResponseWriter, r *http.Request) {

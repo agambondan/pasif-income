@@ -48,12 +48,12 @@ export default function LoginPage() {
         <div className="w-full max-w-md bg-[#0c0c10] border border-white/5 rounded-[2.5rem] p-12 shadow-2xl relative z-10 animate-in fade-in zoom-in duration-500">
         <div className="text-center mb-12">
           <div className="w-16 h-16 bg-linear-to-br from-emerald-400 to-blue-500 rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-             <span className="text-white text-3xl font-black italic">CF</span>
+             <span className="text-white text-3xl font-black italic">PI</span>
           </div>
           <h1 className="text-3xl font-black text-white tracking-tighter uppercase">
             OPERATIONS LOGIN
           </h1>
-          <p className="text-zinc-500 mt-2 text-xs font-bold uppercase tracking-widest">Access the dashboard and connected workflow modules</p>
+          <p className="text-zinc-500 mt-2 text-xs font-bold uppercase tracking-widest">Access the creator, clipper, review, library, and integrations modules</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-8">
@@ -101,7 +101,7 @@ export default function LoginPage() {
         <div className="mt-12 text-center">
            <div className="space-y-3">
              <div className="inline-block px-4 py-1.5 rounded-full bg-zinc-900 border border-white/5 text-[10px] font-black text-zinc-600 uppercase tracking-tighter">
-                After login: Operations, Research, Clipper, Review, Library, Integrations
+                After login: Creator, Research, Clipper, Review, Library, Integrations
              </div>
              <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">
                One session unlocks the full dashboard shell.

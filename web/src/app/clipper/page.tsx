@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import AccountSelector, {
     type ConnectedAccount,
 } from '@/components/account-selector';
+import {
+    DashboardSurfaceHeader,
+} from '@/components/dashboard-surface';
 
 export default function VideoClipper() {
     const [videoUrl, setVideoUrl] = useState("");
@@ -36,6 +39,12 @@ export default function VideoClipper() {
             cancelled = true;
         };
     }, []);
+
+    const browserReadyAccounts = accounts.filter(
+        (account) =>
+            account.auth_method !== 'chromium_profile' ||
+            account.browser_status === 'ready',
+    );
 
     const startClipping = async () => {
         try {
@@ -90,19 +99,42 @@ export default function VideoClipper() {
 
     return (
         <div className='space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10'>
+            <DashboardSurfaceHeader
+                eyebrow='Clipper Portal'
+                title='Podcast clips factory'
+                description='Turn a source URL or backend-visible file path into a reviewable clipping job with clear destination selection.'
+                actions={
+                    <>
+                        <div className="rounded-2xl border border-white/5 bg-black/30 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                            {browserReadyAccounts.length}/{accounts.length || 0} destination accounts ready
+                        </div>
+                        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-emerald-300">
+                            Source + destination locked to dashboard session
+                        </div>
+                    </>
+                }
+            />
+
+            <section className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-3xl border border-white/5 bg-card p-6 shadow-xl">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Connected Accounts</p>
+                    <p className="mt-2 text-3xl font-black text-white">{accounts.length}</p>
+                </div>
+                <div className="rounded-3xl border border-white/5 bg-card p-6 shadow-xl">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Browser Ready</p>
+                    <p className="mt-2 text-3xl font-black text-emerald-400">{browserReadyAccounts.length}</p>
+                </div>
+                <div className="rounded-3xl border border-white/5 bg-card p-6 shadow-xl">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Selected Destinations</p>
+                    <p className="mt-2 text-3xl font-black text-amber-400">{selectedAccounts.length}</p>
+                </div>
+            </section>
+
             <div className='w-full'>
                 <div className='bg-card border border-white/5 rounded-[3rem] p-12 shadow-2xl relative overflow-hidden group'>
                     <div className='absolute -top-24 -right-24 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl group-hover:bg-emerald-500/10 transition-colors'></div>
                     
                     <div className='relative z-10'>
-                        <div className='flex items-center gap-4 mb-10'>
-                            <div className='w-14 h-14 bg-emerald-500/20 rounded-2xl flex items-center justify-center text-3xl shadow-lg border border-emerald-500/30 text-emerald-400'>🎬</div>
-                            <div>
-                                <h3 className='text-2xl font-bold text-white uppercase tracking-tight'>New Clipping Job</h3>
-                                <p className='text-zinc-500 text-xs font-bold uppercase tracking-widest mt-1'>Vision AI Pipeline v4.0</p>
-                            </div>
-                        </div>
-
                         <div className='space-y-10'>
                             <div className='space-y-3'>
                                 <label className='text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] ml-2'>Video Source URL</label>
@@ -110,17 +142,17 @@ export default function VideoClipper() {
                                     value={videoUrl}
                                     onChange={(e) => setVideoUrl(e.target.value)}
                                     className='w-full rounded-[1.5rem] border border-white/10 bg-black/40 px-8 py-6 text-white font-bold outline-none transition-all focus:border-emerald-500 focus:ring-8 focus:ring-emerald-500/5 placeholder:text-zinc-700'
-                                    placeholder='Paste YouTube link or local storage path...'
+                                    placeholder='Paste YouTube link or backend-visible file path...'
                                 />
-                                <div className='space-y-2 rounded-2xl border border-white/5 bg-black/20 px-4 py-3'>
+                                <div className='grid gap-3 rounded-2xl border border-white/5 bg-black/20 px-4 py-4 md:grid-cols-3'>
                                     <p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
                                         Accepted sources: YouTube URL or direct file path accessible from the backend.
                                     </p>
                                     <p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
-                                        Select at least one connected destination account before starting.
+                                        Destination accounts must be connected first, then selected below.
                                     </p>
                                     <p className='text-[10px] font-bold text-zinc-500 uppercase tracking-widest'>
-                                        The job will run through the authenticated backend session.
+                                        Browser profile destinations are gated until the profile reaches READY.
                                     </p>
                                 </div>
                             </div>
@@ -154,7 +186,7 @@ export default function VideoClipper() {
                             </button>
 
                             {status && (
-                                <div className='mt-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-6 py-4 text-xs font-bold text-emerald-400 text-center animate-pulse uppercase tracking-widest'>
+                                <div className={`mt-6 rounded-2xl px-6 py-4 text-xs font-bold text-center uppercase tracking-widest ${status.toLowerCase().includes('failed') || status.toLowerCase().includes('error') ? 'border border-red-500/20 bg-red-500/10 text-red-300' : 'border border-emerald-500/20 bg-emerald-500/10 text-emerald-400'}`}>
                                     {status}
                                 </div>
                             )}

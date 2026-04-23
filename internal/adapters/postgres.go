@@ -25,6 +25,13 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 		return nil, err
 	}
 
+	if _, err := db.Exec(`SELECT pg_advisory_lock(744211);`); err != nil {
+		return nil, fmt.Errorf("failed to acquire schema init lock: %w", err)
+	}
+	defer func() {
+		_, _ = db.Exec(`SELECT pg_advisory_unlock(744211);`)
+	}()
+
 	// Initialize table if not exists
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS clips (
@@ -49,6 +56,7 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 			id TEXT PRIMARY KEY,
 			niche TEXT NOT NULL,
 			topic TEXT NOT NULL,
+			video_url TEXT DEFAULT '',
 			title TEXT DEFAULT '',
 			description TEXT DEFAULT '',
 			pin_comment TEXT DEFAULT '',
@@ -68,6 +76,7 @@ func NewPostgresRepository(connStr string) (*PostgresRepository, error) {
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS title TEXT DEFAULT '';
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS pin_comment TEXT DEFAULT '';
+		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS video_url TEXT DEFAULT '';
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS video_path TEXT DEFAULT '';
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS current_stage TEXT DEFAULT 'queued';
 		ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS progress_pct INT DEFAULT 0;
@@ -783,9 +792,9 @@ func (r *PostgresRepository) ListClips(ctx context.Context) ([]domain.Clip, erro
 
 func (r *PostgresRepository) CreateJob(ctx context.Context, job *domain.GenerationJob) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO generation_jobs (id, niche, topic, title, description, video_path, status, current_stage, progress_pct, error, created_at, updated_at, completed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-	`, job.ID, job.Niche, job.Topic, job.Title, job.Description, job.VideoPath, job.Status, job.CurrentStage, job.ProgressPct, nullString(job.Error), job.CreatedAt, job.UpdatedAt, nullTimePtr(job.CompletedAt))
+		INSERT INTO generation_jobs (id, niche, topic, video_url, title, description, video_path, status, current_stage, progress_pct, error, created_at, updated_at, completed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+	`, job.ID, job.Niche, job.Topic, job.VideoURL, job.Title, job.Description, job.VideoPath, job.Status, job.CurrentStage, job.ProgressPct, nullString(job.Error), job.CreatedAt, job.UpdatedAt, nullTimePtr(job.CompletedAt))
 	return err
 }
 

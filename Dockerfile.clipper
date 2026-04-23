@@ -9,17 +9,10 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o clipper cmd/clipper/main.go
 
-FROM python:3.14.4-slim
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip install --no-cache-dir numpy opencv-python-headless yt-dlp
+FROM alpine:3.23
 
 WORKDIR /app
 COPY --from=builder /app/clipper .
-COPY scripts/ ./scripts/
 
 EXPOSE 8081
 
